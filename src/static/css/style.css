@@ -1,0 +1,731 @@
+/**
+ * 智能墒情灌溉系统 - 全局样式定义 (苹果设计风格)
+ */
+
+/* 基础变量定义 */
+:root {
+  /* 苹果风格颜色系统 */
+  --primary-color: #007aff;  /* 主绿色 */
+  --secondary-color: #5ac8fa; /* 蓝色 */
+  --tertiary-color: #5ac8fa;    /* 浅蓝色 */
+  --warning-color: #ff9500;     /* 橙色警告 */
+  --danger-color: #ff3b30;   /* 红色危险 */
+  --success-color: #34c759;  /* 绿色成功 */
+  --info-color: #5ac8fa;        /* 信息蓝 */
+  --text-primary: #1d1d1f;   /* 主文本颜色 */
+  --text-secondary: #86868b; /* 次要文本颜色 */
+  --text-tertiary: #98989d;     /* 第三级文本 */
+  --background-color: #f5f5f7;  /* 苹果背景色 */
+  --card-bg: #ffffff;           /* 卡片背景 */
+  
+  /* 阴影与圆角 */
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --card-shadow-hover: 0 4px 12px rgba(0,0,0,0.08);
+  --border-radius: 12px;
+  
+  /* 布局单位 */
+  --spacing-unit: 8px;
+  --content-width: 1200px;
+  
+  /* 动画时间 */
+  --transition-fast: 0.2s;
+  --transition-normal: 0.3s;
+  --transition-slow: 0.5s;
+  --dark-color: #1d1d1f;
+  --light-color: #f5f5f7;
+  --gray-color: #86868b;
+  --card-radius: 16px;
+  --input-radius: 8px;
+  --transition-speed: 0.3s;
+}
+
+body {
+  font-family: 'SF Pro Text', 'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background-color: var(--background-color);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 排版样式 */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  margin-bottom: var(--spacing-unit);
+  color: var(--text-primary);
+}
+
+h1 { font-size: 24px; }
+h2 { font-size: 22px; }
+h3 { font-size: 20px; }
+h4 { font-size: 18px; }
+h5 { font-size: 16px; }
+h6 { font-size: 14px; }
+
+p, span, div {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+/* 苹果风格卡片 */
+.apple-card {
+  background-color: white;
+  border-radius: var(--card-radius);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
+}
+
+.apple-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+}
+
+.apple-card-header {
+  padding: 1.25rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.apple-card-body {
+  padding: 1.25rem;
+}
+
+/* 现代化进度指示器 */
+.progress-ring {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.progress-ring-circle {
+  stroke: var(--secondary-color);
+  stroke-width: 8;
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s ease;
+}
+
+.progress-ring-bg {
+  stroke: rgba(0, 122, 255, 0.1);
+  stroke-width: 8;
+  fill: none;
+}
+
+.progress-ring-text {
+  fill: var(--text-primary);
+  font-size: 24px;
+  font-weight: 600;
+  transform: rotate(90deg) translateY(-3px);
+  dominant-baseline: middle;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'Helvetica Neue', sans-serif;
+}
+
+.progress-ring-animated .progress-ring-circle {
+  animation: progress-ring-fill 1.5s ease-out forwards;
+}
+
+@keyframes progress-ring-fill {
+  0% {
+    stroke-dashoffset: 440;
+  }
+}
+
+/* 苹果风格按钮 */
+.apple-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 3);
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  outline: none;
+}
+
+.apple-btn-primary {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.apple-btn-primary:hover {
+  background-color: #0062cc;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 122, 255, 0.3);
+}
+
+.apple-btn-secondary {
+  background-color: rgba(0, 122, 255, 0.1);
+  color: var(--secondary-color);
+}
+
+.apple-btn-secondary:hover {
+  background-color: rgba(0, 122, 255, 0.2);
+  color: var(--secondary-color);
+  transform: translateY(-1px);
+}
+
+.apple-btn.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.apple-btn.loading:after {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 1s linear infinite;
+  margin-left: 10px;
+  display: inline-block;
+}
+
+/* 数据可视化组件 */
+.metric-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(var(--spacing-unit) * 2);
+  border-radius: var(--border-radius);
+  background-color: rgba(255, 255, 255, 0.6);
+  transition: all var(--transition-fast);
+  opacity: 0;
+}
+
+.metric-display:hover {
+  background-color: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: calc(var(--spacing-unit)) 0;
+}
+
+.metric-value.smaller {
+  font-size: 1.1rem;
+}
+
+.metric-label {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* 状态标签 */
+.status-badge {
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all var(--transition-speed) ease;
+}
+
+.status-badge i {
+  margin-right: 0.5rem;
+}
+
+.status-badge-success {
+  background-color: rgba(52, 199, 89, 0.1);
+  color: var(--success-color);
+}
+
+.status-badge-warning {
+  background-color: rgba(255, 149, 0, 0.1);
+  color: var(--warning-color);
+}
+
+.status-badge-danger {
+  background-color: rgba(255, 59, 48, 0.1);
+  color: var(--danger-color);
+}
+
+/* 动态头部区域 */
+.dashboard-header {
+  background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+  padding: calc(var(--spacing-unit) * 3) 0;
+  border-radius: var(--border-radius);
+  color: white;
+  margin-bottom: calc(var(--spacing-unit) * 4);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at top right, rgba(255,255,255,0.2), transparent 70%);
+}
+
+.dashboard-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: calc(var(--spacing-unit));
+  background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.dashboard-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* 保留一些原有的功能性样式并进行现代化改造 */
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(0, 0, 0, 0.05);
+  border-radius: 50%;
+  border-top: 3px solid var(--primary-color);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 响应式布局调整 */
+@media (max-width: 992px) {
+  .dashboard-title {
+    font-size: 1.8rem;
+  }
+  
+  .dashboard-subtitle {
+    font-size: 1rem;
+  }
+  
+  .apple-card-header {
+    padding: calc(var(--spacing-unit) * 2);
+  }
+  
+  .apple-card-body {
+    padding: calc(var(--spacing-unit) * 2);
+  }
+}
+
+@media (max-width: 768px) {
+  .soil-moisture-ring {
+    width: 140px;
+    height: 140px;
+  }
+  
+  .metric-value {
+    font-size: 1.3rem;
+  }
+  
+  .apple-btn {
+    padding: calc(var(--spacing-unit) * 1.25) calc(var(--spacing-unit) * 2);
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .dashboard-title {
+    font-size: 1.5rem;
+  }
+  
+  .dashboard-subtitle {
+    font-size: 0.9rem;
+  }
+  
+  .soil-moisture-ring {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .progress-ring-text {
+    font-size: 18px;
+  }
+}
+
+/* 仪表盘整体样式 */
+.title-underline {
+  height: 3px;
+  width: 70px;
+  background: linear-gradient(90deg, #0d6efd, #20c997);
+  margin-top: 8px;
+  border-radius: 2px;
+}
+
+/* 卡片和表格紧凑样式 */
+.card {
+  box-shadow: 0 0.15rem 0.5rem rgba(0, 0, 0, 0.1);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+  border-bottom: none;
+  padding: 0.75rem 1.25rem;
+}
+
+.border-left-success {
+  border-left: 4px solid #28a745;
+}
+
+.border-left-info {
+  border-left: 4px solid #17a2b8;
+}
+
+.table-sm td, .table-sm th {
+  padding: 0.4rem;
+  font-size: 0.85rem;
+}
+
+/* 进度条样式改进 */
+.progress {
+  background-color: #f0f0f0;
+  height: 25px;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.progress-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  transition: width 0.6s ease;
+}
+
+/* 状态徽章和提示样式 */
+.badge {
+  padding: 0.35em 0.65em;
+  border-radius: 4px;
+}
+
+.alert {
+  border: none;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.alert-success {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.alert-warning {
+  background-color: #fff8e1;
+  color: #f57f17;
+}
+
+.alert-danger {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+/* 紧凑的信息布局 */
+.card-body {
+  padding: 1rem;
+}
+
+.table-responsive {
+  margin-bottom: 0;
+}
+
+.small {
+  font-size: 85%;
+}
+
+.fw-bold {
+  font-weight: 600;
+}
+
+/* 图标样式增强 */
+.fa-lg {
+  font-size: 1.25em;
+  line-height: 0.75em;
+  vertical-align: -0.0667em;
+}
+
+/* 优化布局，减少垂直空间 */
+.mb-1 {
+  margin-bottom: 0.25rem !important;
+}
+
+.mb-2 {
+  margin-bottom: 0.5rem !important;
+}
+
+.mb-3 {
+  margin-bottom: 0.75rem !important;
+}
+
+.py-2 {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+.mt-1 {
+  margin-top: 0.25rem !important;
+}
+
+.mt-2 {
+  margin-top: 0.5rem !important;
+}
+
+.mt-3 {
+  margin-top: 0.75rem !important;
+}
+
+/* 顶部导航栏 */
+.navbar {
+  background-color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+  padding: calc(var(--spacing-unit) * 2);
+}
+
+.navbar-brand {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nav-link {
+  color: var(--text-secondary);
+  font-weight: 500;
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
+  transition: all var(--transition-fast);
+  border-radius: var(--border-radius);
+}
+
+.nav-link:hover {
+  color: var(--secondary-color);
+  background-color: rgba(0, 122, 255, 0.05);
+}
+
+.nav-link.active {
+  color: var(--secondary-color);
+  background-color: rgba(0, 122, 255, 0.1);
+}
+
+/* 消息提示 */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  max-width: 300px;
+  opacity: 0;
+  animation: toastFadeIn 0.3s forwards;
+}
+
+.toast-content {
+  display: flex;
+  align-items: center;
+}
+
+.toast-content i {
+  margin-right: 10px;
+}
+
+.toast-success {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.toast-error {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.toast-info {
+  background-color: #d1ecf1;
+  color: #0c5460;
+}
+
+@keyframes toastFadeIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.toast.animate__fadeOut {
+  animation: toastFadeOut 0.3s forwards;
+}
+
+@keyframes toastFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(20px); }
+}
+
+/* 页面内容相关 */
+.dashboard-container {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+/* 灌溉系统特有样式 */
+
+/* 土壤墒情卡片样式 */
+.soil-info-card {
+  border-radius: 20px;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* 湿度状态标签样式 */
+.moisture-status-tag {
+  padding: 0.35rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  display: inline-block;
+  transition: all 0.3s ease;
+}
+
+.moisture-status-tag.sufficient {
+  background-color: rgba(52, 199, 89, 0.1);
+  color: var(--success-color);
+}
+
+.moisture-status-tag.moderate {
+  background-color: rgba(255, 149, 0, 0.1);
+  color: var(--warning-color);
+}
+
+.moisture-status-tag.insufficient {
+  background-color: rgba(255, 59, 48, 0.1);
+  color: var(--danger-color);
+}
+
+/* 阈值显示样式 */
+.thresholds-container {
+  border-radius: 12px;
+  background-color: #f8f9fa;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.threshold-item {
+  text-align: center;
+}
+
+.threshold-value {
+  font-weight: 600;
+  font-size: 1.125rem;
+  margin-bottom: 0.25rem;
+}
+
+.threshold-label {
+  font-size: 0.75rem;
+  color: var(--gray-color);
+  margin-bottom: 0;
+}
+
+/* 数据点样式 */
+.data-point {
+  opacity: 0;
+  animation: fadeIn 0.5s forwards;
+  animation-delay: calc(var(--index, 0) * 0.1s);
+  margin-bottom: 0.75rem;
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+
+/* 刷新按钮样式 */
+.refresh-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8f9fa;
+  border: none;
+  color: var(--dark-color);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.refresh-button:hover {
+  background-color: #e9ecef;
+}
+
+.refresh-button:active {
+  transform: scale(0.95);
+}
+
+.refresh-button.loading {
+  pointer-events: none;
+  animation: spin 1s linear infinite;
+}
+
+@media (max-width: 768px) {
+  .container-fluid {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  .apple-card-header {
+    padding: 1rem;
+  }
+  
+  .apple-card-body {
+    padding: 1rem;
+  }
+  
+  .threshold-item {
+    font-size: 0.875rem;
+  }
+  
+  .threshold-value {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .apple-card {
+    border-radius: 12px;
+  }
+  
+  .status-badge {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+  
+  .thresholds-container {
+    padding: 0.75rem;
+  }
+} 

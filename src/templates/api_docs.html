@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<style>
+    .api-card {
+        margin-bottom: 25px;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .api-card:hover {
+        box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        transform: translateY(-5px);
+    }
+    
+    .api-header {
+        padding: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #17a2b8, #28a745);
+        color: white;
+    }
+    
+    .api-path {
+        font-family: monospace;
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+    
+    .api-method {
+        background-color: rgba(255, 255, 255, 0.2);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    
+    .api-body {
+        background-color: #fff;
+        padding: 20px;
+    }
+    
+    .api-description {
+        margin-bottom: 15px;
+        color: #555;
+    }
+    
+    .endpoints-list {
+        list-style-type: none;
+        padding: 0;
+    }
+    
+    .endpoint-category {
+        margin-bottom: 30px;
+    }
+    
+    .category-title {
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #eee;
+        color: #17a2b8;
+    }
+    
+    .api-badge {
+        padding: 5px 10px;
+        border-radius: 30px;
+        font-size: 12px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    
+    .badge-get {
+        background-color: #17a2b8;
+        color: white;
+    }
+    
+    .badge-post {
+        background-color: #28a745;
+        color: white;
+    }
+    
+    .badge-put {
+        background-color: #fd7e14;
+        color: white;
+    }
+    
+    .badge-delete {
+        background-color: #dc3545;
+        color: white;
+    }
+    
+    .api-detail {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .api-example {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 4px;
+        margin-top: 10px;
+        border-left: 4px solid #17a2b8;
+    }
+    
+    .api-example pre {
+        margin: 0;
+        white-space: pre-wrap;
+    }
+    
+    .params-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+    }
+    
+    .params-table th, .params-table td {
+        padding: 8px 12px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .params-table th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+    
+    .param-required {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    
+    .param-optional {
+        color: #6c757d;
+        font-style: italic;
+    }
+    
+    .search-bar {
+        margin-bottom: 25px;
+    }
+    
+    #apiSearch {
+        width: 100%;
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 30px;
+        font-size: 1rem;
+    }
+    
+    .api-count {
+        background-color: #17a2b8;
+        color: white;
+        padding: 3px 10px;
+        border-radius: 15px;
+        margin-left: 10px;
+        font-size: 0.8rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">API文档</h2>
+<p class="lead mb-4">此页面提供智能墒情灌溉系统的所有API端点的文档。</p>
+
+<div class="search-bar">
+    <input type="text" id="apiSearch" placeholder="搜索API端点...">
+</div>
+
+<div class="endpoint-category">
+    <h3 class="category-title">所有API端点</h3>
+    <div class="endpoints-list">
+        {% for route in api_routes %}
+        <div class="api-card">
+            <div class="api-header">
+                <div class="api-path">{{ route.path }}</div>
+                <div class="api-method">{{ route.methods }}</div>
+            </div>
+            <div class="api-body">
+                <div class="api-description">
+                    {% if route.description %}
+                    {{ route.description }}
+                    {% else %}
+                    <em>无描述</em>
+                    {% endif %}
+                </div>
+                
+                <div class="api-detail">
+                    <div>端点名称: <code>{{ route.endpoint }}</code></div>
+                    <div>
+                        {% for method in route.methods.split(',') %}
+                            {% if method == 'GET' %}
+                            <span class="api-badge badge-get">{{ method }}</span>
+                            {% elif method == 'POST' %}
+                            <span class="api-badge badge-post">{{ method }}</span>
+                            {% elif method == 'PUT' %}
+                            <span class="api-badge badge-put">{{ method }}</span>
+                            {% elif method == 'DELETE' %}
+                            <span class="api-badge badge-delete">{{ method }}</span>
+                            {% else %}
+                            <span class="api-badge">{{ method }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                {% if 'soil_data' in route.endpoint %}
+                <div class="params-section mt-3">
+                    <h5>参数说明</h5>
+                    <table class="params-table">
+                        <thead>
+                            <tr>
+                                <th>参数名</th>
+                                <th>类型</th>
+                                <th>必填</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>field_id</td>
+                                <td>string</td>
+                                <td class="param-optional">否</td>
+                                <td>地块ID，不提供时使用默认地块</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="api-example">
+                    <h5>示例请求</h5>
+                    <pre>GET {{ route.path }}?field_id=1810564502987649024</pre>
+                    
+                    <h5>示例响应</h5>
+                    <pre>{
+  "status": "ok",
+  "max_humidity": 30.5,
+  "min_humidity": 18.2,
+  "real_humidity": 25.8,
+  "sat": 32.0,
+  "fc": 28.5,
+  "pwp": 15.0,
+  "is_real_data": true,
+  "timestamp": "2024-07-15 12:34:56",
+  "unit": "%"
+}</pre>
+                </div>
+                {% elif 'weather_data' in route.endpoint %}
+                <div class="params-section mt-3">
+                    <h5>参数说明</h5>
+                    <table class="params-table">
+                        <thead>
+                            <tr>
+                                <th>参数名</th>
+                                <th>类型</th>
+                                <th>必填</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>days</td>
+                                <td>integer</td>
+                                <td class="param-optional">否</td>
+                                <td>获取天数，默认7天</td>
+                            </tr>
+                            <tr>
+                                <td>start_date</td>
+                                <td>string</td>
+                                <td class="param-optional">否</td>
+                                <td>开始日期，格式YYYY-MM-DD</td>
+                            </tr>
+                            <tr>
+                                <td>end_date</td>
+                                <td>string</td>
+                                <td class="param-optional">否</td>
+                                <td>结束日期，格式YYYY-MM-DD</td>
+                            </tr>
+                            <tr>
+                                <td>type</td>
+                                <td>string</td>
+                                <td class="param-optional">否</td>
+                                <td>数据类型，daily或hourly，默认daily</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% elif 'auto_irrigation_soil' in route.endpoint %}
+                <div class="params-section mt-3">
+                    <h5>参数说明</h5>
+                    <table class="params-table">
+                        <thead>
+                            <tr>
+                                <th>参数名</th>
+                                <th>类型</th>
+                                <th>必填</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>field_id</td>
+                                <td>string</td>
+                                <td class="param-required">是</td>
+                                <td>地块ID</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% elif 'model_output_data' in route.endpoint %}
+                <div class="params-section mt-3">
+                    <h5>参数说明</h5>
+                    <table class="params-table">
+                        <thead>
+                            <tr>
+                                <th>参数名</th>
+                                <th>类型</th>
+                                <th>必填</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>type</td>
+                                <td>string</td>
+                                <td class="param-optional">否</td>
+                                <td>输出数据类型，可选值：yield, water_balance, biomass，默认yield</td>
+                            </tr>
+                            <tr>
+                                <td>format</td>
+                                <td>string</td>
+                                <td class="param-optional">否</td>
+                                <td>输出格式，可选值：json, csv，默认json</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // API搜索功能
+    $('#apiSearch').on('keyup', function() {
+        const searchTerm = $(this).val().toLowerCase();
+        
+        $('.api-card').each(function() {
+            const path = $(this).find('.api-path').text().toLowerCase();
+            const description = $(this).find('.api-description').text().toLowerCase();
+            const endpoint = $(this).find('.api-detail code').text().toLowerCase();
+            
+            if (path.includes(searchTerm) || description.includes(searchTerm) || endpoint.includes(searchTerm)) {
+                $(this).show();
+            } else {
+                $(this).hide();
+            }
+        });
+    });
+});
+</script>
+{% endblock %} 

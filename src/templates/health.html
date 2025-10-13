@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<style>
+    .health-check {
+        margin-top: 20px;
+    }
+    
+    .check-item {
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .check-item.success {
+        background-color: #d4edda;
+        border-left: 5px solid #28a745;
+    }
+    
+    .check-item.warning {
+        background-color: #fff3cd;
+        border-left: 5px solid #ffc107;
+    }
+    
+    .check-item.danger {
+        background-color: #f8d7da;
+        border-left: 5px solid #dc3545;
+    }
+    
+    .check-icon {
+        font-size: 24px;
+        margin-right: 15px;
+    }
+    
+    .success .check-icon {
+        color: #28a745;
+    }
+    
+    .warning .check-icon {
+        color: #ffc107;
+    }
+    
+    .danger .check-icon {
+        color: #dc3545;
+    }
+    
+    .check-details {
+        flex-grow: 1;
+    }
+    
+    .check-title {
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+    
+    .check-desc {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    
+    .timestamp {
+        font-size: 0.85rem;
+        color: #6c757d;
+        text-align: right;
+        margin-top: 20px;
+        font-style: italic;
+    }
+    
+    .actions {
+        margin-top: 25px;
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .overall-status {
+        text-align: center;
+        margin-bottom: 20px;
+        padding: 10px;
+        border-radius: 8px;
+    }
+    
+    .overall-status.success {
+        background-color: #d4edda;
+    }
+    
+    .overall-status.warning {
+        background-color: #fff3cd;
+    }
+    
+    .overall-status.danger {
+        background-color: #f8d7da;
+    }
+    
+    .overall-status i {
+        font-size: 32px;
+        margin-right: 10px;
+        vertical-align: middle;
+    }
+    
+    .overall-status.success i {
+        color: #28a745;
+    }
+    
+    .overall-status.warning i {
+        color: #ffc107;
+    }
+    
+    .overall-status.danger i {
+        color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2>系统健康检查</h2>
+        <p class="lead">检查系统各组件的运行状态</p>
+        
+        {% set total_checks = (data_dir|int + static_dir|int + model_output|int + templates|int) %}
+        {% set status_class = 'success' if total_checks == 4 else ('warning' if total_checks >= 2 else 'danger') %}
+        
+        <div class="overall-status {{ status_class }}">
+            <i class="fas {% if total_checks == 4 %}fa-check-circle{% elif total_checks >= 2 %}fa-exclamation-triangle{% else %}fa-times-circle{% endif %}"></i>
+            <span class="h4">
+                {% if total_checks == 4 %}
+                系统状态良好，所有检查通过
+                {% elif total_checks >= 2 %}
+                系统状态需要注意，部分检查未通过
+                {% else %}
+                系统状态异常，多数检查未通过
+                {% endif %}
+            </span>
+        </div>
+        
+        <div class="health-check">
+            <!-- 数据目录检查 -->
+            <div class="check-item {% if data_dir %}success{% else %}danger{% endif %}">
+                <div class="check-icon">
+                    <i class="fas {% if data_dir %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                </div>
+                <div class="check-details">
+                    <div class="check-title">数据目录</div>
+                    <div class="check-desc">
+                        {% if data_dir %}
+                        数据目录存在并可访问。
+                        {% else %}
+                        数据目录不存在或无法访问，系统可能无法正常运行。
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 静态资源目录检查 -->
+            <div class="check-item {% if static_dir %}success{% else %}danger{% endif %}">
+                <div class="check-icon">
+                    <i class="fas {% if static_dir %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                </div>
+                <div class="check-details">
+                    <div class="check-title">静态资源目录</div>
+                    <div class="check-desc">
+                        {% if static_dir %}
+                        静态资源目录存在并可访问。
+                        {% else %}
+                        静态资源目录不存在或无法访问，系统界面可能无法正常显示。
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 模型输出目录检查 -->
+            <div class="check-item {% if model_output %}success{% else %}warning{% endif %}">
+                <div class="check-icon">
+                    <i class="fas {% if model_output %}fa-check-circle{% else %}fa-exclamation-triangle{% endif %}"></i>
+                </div>
+                <div class="check-details">
+                    <div class="check-title">模型输出目录</div>
+                    <div class="check-desc">
+                        {% if model_output %}
+                        模型输出目录存在并可访问，系统可以正常进行模型计算。
+                        {% else %}
+                        模型输出目录不存在或无法访问，系统可能无法显示作物生长和灌溉建议数据。
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 模板目录检查 -->
+            <div class="check-item {% if templates %}success{% else %}danger{% endif %}">
+                <div class="check-icon">
+                    <i class="fas {% if templates %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                </div>
+                <div class="check-details">
+                    <div class="check-title">模板目录</div>
+                    <div class="check-desc">
+                        {% if templates %}
+                        模板目录存在并可访问，系统可以正常渲染页面。
+                        {% else %}
+                        模板目录不存在或无法访问，系统可能无法显示用户界面。
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- API状态检查 -->
+            <div class="check-item success" id="api-check">
+                <div class="check-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div class="check-details">
+                    <div class="check-title">API状态</div>
+                    <div class="check-desc">正在检查API状态...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="timestamp">
+            检查时间: {{ timestamp }}
+        </div>
+        
+        <div class="actions">
+            <button class="btn btn-primary" onclick="location.reload()">
+                <i class="fas fa-sync-alt"></i> 重新检查
+            </button>
+            <button class="btn btn-success" onclick="window.location.href='/'">
+                <i class="fas fa-home"></i> 返回首页
+            </button>
+            <button class="btn btn-info" onclick="window.location.href='/dashboard'">
+                <i class="fas fa-tachometer-alt"></i> 进入仪表盘
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+$(document).ready(function() {
+    // 检查API状态
+    $.ajax({
+        url: '/health?format=json',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            var apiCheck = $('#api-check');
+            if(response.status === 'ok') {
+                apiCheck.removeClass('warning danger').addClass('success');
+                apiCheck.find('.check-icon i').removeClass('fa-exclamation-triangle fa-times-circle').addClass('fa-check-circle');
+                apiCheck.find('.check-desc').text('API服务正常响应，所有接口可用。');
+            } else {
+                apiCheck.removeClass('success danger').addClass('warning');
+                apiCheck.find('.check-icon i').removeClass('fa-check-circle fa-times-circle').addClass('fa-exclamation-triangle');
+                apiCheck.find('.check-desc').text('API服务响应异常，部分功能可能不可用。');
+            }
+        },
+        error: function() {
+            var apiCheck = $('#api-check');
+            apiCheck.removeClass('success warning').addClass('danger');
+            apiCheck.find('.check-icon i').removeClass('fa-check-circle fa-exclamation-triangle').addClass('fa-times-circle');
+            apiCheck.find('.check-desc').text('无法连接到API服务，请检查服务器状态。');
+        }
+    });
+});
+</script>
+{% endblock %} 

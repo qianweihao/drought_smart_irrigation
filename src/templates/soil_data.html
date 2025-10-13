@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>土壤数据</h2>
+
+{% if soil_data %}
+<div class="alert alert-success">
+    <p>数据获取成功!</p>
+</div>
+
+<h3>土壤湿度数据</h3>
+<p>最大湿度: {{ soil_data.max_humidity }}%</p>
+<p>最小湿度: {{ soil_data.min_humidity }}%</p>
+<p>当前湿度: {{ soil_data.real_humidity }}%</p>
+
+<h3>字段信息</h3>
+<p>地块ID: {{ field_id }}</p>
+
+{% else %}
+<div class="alert alert-warning">
+    <p>暂无数据或获取数据失败</p>
+</div>
+{% endif %}
+
+<a href="/dashboard" class="btn">返回仪表盘</a>
+{% endblock %} 

@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}仪表盘 - 智能灌溉系统{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+    /* 页面特定样式 */
+    .apple-card {
+        background-color: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(0,0,0,0.1);
+        transition: all var(--transition-fast) ease;
+        position: relative; /* 为了刷新按钮定位 */
+    }
+    .apple-card:hover {
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        transform: translateY(-3px);
+    }
+    .card-icon {
+        font-size: 1.8rem;
+        width: 50px;
+        height: 50px;
+        line-height: 50px;
+        text-align: center;
+        border-radius: 12px;
+        color: #fff;
+        margin-bottom: 1rem;
+    }
+    .bg-soil { background-color: #8B4513; } /* 棕色 */
+    .bg-water { background-color: #1E90FF; } /* 道奇蓝 */
+    .bg-plant { background-color: #2E8B57; } /* 海洋绿 */
+    .bg-cloud { background-color: #87CEEB; } /* 天蓝色 */
+    .bg-history { background-color: #778899; } /* 亮石板灰 */
+    .bg-decision { background-color: #FFA500; } /* 橙色 */
+
+    .data-value {
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+    .data-unit {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin-left: 4px;
+    }
+    .data-label {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px; /* 或根据需要调整 */
+        width: 100%;
+    }
+    .loading-spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid var(--primary-color);
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .placeholder {
+        color: #aaa;
+        font-style: italic;
+    }
+    .refresh-button {
+        position: absolute;
+        top: 10px;
+        right: 15px;
+        background: none;
+        border: none;
+        font-size: 1.2rem;
+        color: #6c757d;
+        cursor: pointer;
+        opacity: 0.7;
+        transition: opacity 0.2s, transform 0.2s;
+    }
+    .refresh-button:hover {
+        opacity: 1;
+        transform: rotate(90deg);
+    }
+    .refresh-button.loading {
+        animation: spin 1s linear infinite;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4 display-6">作物智能灌溉仪表盘</h1>
+
+    <div class="row g-4">
+        <!-- 土壤墒情 -->
+        <div class="col-lg-4 col-md-6">
+            <div class="card apple-card h-100">
+                <button class="refresh-button" id="refresh-soil-data" title="刷新土壤数据"><i class="fas fa-sync-alt"></i></button>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="card-icon bg-soil me-3"><i class="fas fa-mountain"></i></div>
+                        <h5 class="card-title mb-0">土壤墒情</h5>
+                    </div>
+                    <div id="soil-data-content">
+                        <div class="loading-spinner"></div>
+                        <p class="placeholder text-center d-none">正在加载土壤数据...</p>
+                    </div>
+                    <ul class="list-unstyled mt-3 mb-0">
+                        <li class="d-flex justify-content-between py-1 border-bottom">
+                            <span class="data-label"><i class="fas fa-thermometer-half text-danger me-1"></i> 凋萎点 (PWP)</span>
+                            <span id="soil-pwp" class="fw-bold placeholder">-%</span>
+                        </li>
+                        <li class="d-flex justify-content-between py-1 border-bottom">
+                           <span class="data-label"><i class="fas fa-tint text-warning me-1"></i> 田间持水量 (FC)</span>
+                            <span id="soil-fc" class="fw-bold placeholder">-%</span>
+                        </li>
+                        <li class="d-flex justify-content-between py-1">
+                           <span class="data-label"><i class="fas fa-fill-drip text-info me-1"></i> 饱和含水量 (SAT)</span>
+                            <span id="soil-sat" class="fw-bold placeholder">-%</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 灌溉决策 -->
+        <div class="col-lg-4 col-md-6">
+            <div class="card apple-card h-100">
+                 <button class="refresh-button" id="refresh-decision-data" title="刷新灌溉决策"><i class="fas fa-sync-alt"></i></button>
+                <div class="card-body">
+                     <div class="d-flex align-items-center mb-3">
+                        <div class="card-icon bg-decision me-3"><i class="fas fa-faucet"></i></div>
+                        <h5 class="card-title mb-0">灌溉决策</h5>
+                    </div>
+                     <div id="irrigation-decision-content">
+                        <div class="loading-spinner"></div>
+                         <p class="placeholder text-center d-none">正在加载灌溉决策...</p>
+                     </div>
+                     <div class="text-center mt-3">
+                         <button id="make-decision-btn" class="btn btn-primary"><i class="fas fa-play-circle me-1"></i> 生成今日决策</button>
+                         <p id="make-decision-status" class="text-muted small mt-2"></p>
+                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 作物生长阶段 -->
+        <div class="col-lg-4 col-md-12">
+            <div class="card apple-card h-100">
+                <button class="refresh-button" id="refresh-growth-data" title="刷新生长阶段"><i class="fas fa-sync-alt"></i></button>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="card-icon bg-plant me-3"><i class="fas fa-seedling"></i></div>
+                        <h5 class="card-title mb-0">作物生长</h5>
+                    </div>
+                    <div class="text-center">
+                        <img id="canopy-cover-img" src="{{ url_for('static', filename=canopy_cover_img) }}" alt="冠层覆盖度" class="img-fluid rounded" style="max-height: 200px; width: auto; margin: auto; display: block;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史土壤湿度 -->
+        <div class="col-lg-12">
+            <div class="card apple-card">
+                 <button class="refresh-button" id="refresh-history-data" title="刷新历史数据"><i class="fas fa-sync-alt"></i></button>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="card-icon bg-history me-3"><i class="fas fa-history"></i></div>
+                        <h5 class="card-title mb-0">历史土壤湿度 (最近30天)</h5>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="humidity-chart"></canvas>
+                        <div id="humidity-chart-loading" class="loading-spinner"></div>
+                        <p id="humidity-chart-placeholder" class="placeholder text-center d-none">正在加载图表数据...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 消息提示容器 -->
+<div id="toast-container" class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <!-- Toast 消息将插入这里 -->
+</div>
+{% endblock %}
+
+{% block custom_js %}
+{# 确保 dashboard.js 在这里加载，它已在 base.html 中加载，这里无需重复 #}
+{# <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script> #}
+{% endblock %} 
