@@ -2,6 +2,7 @@ import os
 import sys
 import warnings
 
+sys.dont_write_bytecode = True
 warnings.filterwarnings('ignore')
 
 project_root = os.path.dirname(os.path.abspath(__file__))

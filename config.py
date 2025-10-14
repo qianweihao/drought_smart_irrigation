@@ -69,6 +69,15 @@ class Config:
     MODELS_DIR = os.path.join(APP_DIR, 'models')
     LOGS_DIR = os.path.join(project_root, 'logs')
     
+    # 文件路径配置 - 使用相对路径，自动适配不同环境
+    FILE_PATHS = {
+        'model_output': os.path.join('data', 'model_output', 'wheat2024.out'),
+        'growth_stages': os.path.join('data', 'growth', 'growth_stages.csv'),
+        'root_depth': os.path.join('data', 'growth', 'root_depth.csv'),
+        'weather_data': os.path.join('data', 'weather', 'irrigation_weather.csv'),
+        'soil_profile': os.path.join('data', 'soil', 'irrigation_soilprofile_sim.csv')
+    }
+    
     # 邮件配置
     EMAIL_CONFIG = {
         'from_email': os.getenv('EMAIL_FROM'),
@@ -108,7 +117,21 @@ class Config:
         'SOIL_DEPTH_CM': int(os.getenv('SOIL_DEPTH_CM', 30)),
         'MAX_FORECAST_DAYS': int(os.getenv('MAX_FORECAST_DAYS', 15)),
         'IRRIGATION_THRESHOLD': float(os.getenv('IRRIGATION_THRESHOLD', 0.6)),
-        'MIN_EFFECTIVE_IRRIGATION': float(os.getenv('MIN_EFFECTIVE_IRRIGATION', 5.0))
+        'MIN_EFFECTIVE_IRRIGATION': float(os.getenv('MIN_EFFECTIVE_IRRIGATION', 5.0)),
+        # 灌溉量分档配置
+        'IRRIGATION_LEVELS': [0, 5, 10, 15, 20, 25, 30, 40, 50],
+        # 降雨相关阈值
+        'MIN_RAIN_AMOUNT': float(os.getenv('MIN_RAIN_AMOUNT', 5.0)),
+        'RAIN_FORECAST_DAYS': int(os.getenv('RAIN_FORECAST_DAYS', 3)),
+        # 根系深度阈值
+        'ROOT_DEPTH_THRESHOLD': float(os.getenv('ROOT_DEPTH_THRESHOLD', 0.3)),
+        # 最大单次灌溉量
+        'MAX_SINGLE_IRRIGATION': float(os.getenv('MAX_SINGLE_IRRIGATION', 30.0)),
+        # 数据验证范围
+        'HUMIDITY_MIN_RANGE': float(os.getenv('HUMIDITY_MIN_RANGE', 0.0)),
+        'HUMIDITY_MAX_RANGE': float(os.getenv('HUMIDITY_MAX_RANGE', 100.0)),
+        # 最小预测数据天数
+        'MIN_FORECAST_DATA_DAYS': int(os.getenv('MIN_FORECAST_DATA_DAYS', 3))
     }
     # 灌溉决策生育阶段系数配置
     GROWTH_STAGE_COEFFICIENTS = {
@@ -118,6 +141,23 @@ class Config:
         "返青-拔节期": 0.9,
         "拔节-抽穗期": 1.0,
         "抽穗-成熟期": 0.9
+    }
+
+    # 根系深度系数配置
+    ROOT_DEPTH_COEFFICIENTS = {
+        "播种-出苗期": 0.3,
+        "出苗-分蘖期": 0.5,
+        "分蘖-越冬期": 0.7,
+        "返青-拔节期": 0.9,
+        "拔节-抽穗期": 1.0,
+        "抽穗-成熟期": 1.0
+    }
+
+    # 灌溉服务默认系数配置
+    DEFAULT_COEFFICIENTS = {
+        'root_depth': float(os.getenv('DEFAULT_ROOT_DEPTH_COEFF', 1.0)),
+        'growth_stage': float(os.getenv('DEFAULT_GROWTH_STAGE_COEFF', 1.0)),
+        'irrigation_threshold': float(os.getenv('DEFAULT_IRRIGATION_THRESHOLD_COEFF', 0.6))
     }
 
     # 告警配置
@@ -140,6 +180,14 @@ class Config:
         'HUMIDITY_10CM_DEFAULT': float(os.getenv('HUMIDITY_10CM_DEFAULT', 15.0)),
         'HUMIDITY_20CM_DEFAULT': float(os.getenv('HUMIDITY_20CM_DEFAULT', 20.0)),
         'HUMIDITY_30CM_DEFAULT': float(os.getenv('HUMIDITY_30CM_DEFAULT', 25.0))
+    }
+
+    # 灌溉服务默认土壤参数配置
+    DEFAULT_SOIL_PARAMS = {
+        'fc': float(os.getenv('DEFAULT_SOIL_FC', 25.0)),
+        'sat': float(os.getenv('DEFAULT_SOIL_SAT', 35.5)),
+        'pwp': float(os.getenv('DEFAULT_SOIL_PWP', 15.2)),
+        'depth_cm': float(os.getenv('DEFAULT_SOIL_DEPTH_CM', 30.0))
     }
     
     # API配置
@@ -166,8 +214,8 @@ class Config:
     # AquaCrop模型模拟配置
     AQUACROP_CONFIG = {
         # 模拟时间范围
-        'SIM_START_TIME': os.getenv('AQUACROP_SIM_START_TIME', '2024/10/1'),
-        'SIM_END_TIME': os.getenv('AQUACROP_SIM_END_TIME', '2025/6/1'),
+        'SIM_START_TIME': os.getenv('AQUACROP_SIM_START_TIME', '2025/10/1'),
+        'SIM_END_TIME': os.getenv('AQUACROP_SIM_END_TIME', '2026/6/1'),
         
         # 作物参数
         'CROP_NAME': os.getenv('AQUACROP_CROP_NAME', 'Wheat'),
@@ -196,6 +244,12 @@ class Config:
         'WEATHER_OUTPUT_TXT': os.getenv('AQUACROP_WEATHER_OUTPUT', 'data/weather/aquacrop_weather.txt'),
         'OUTPUT_DIR': os.getenv('AQUACROP_OUTPUT_DIR', 'data/model_output'),
         'IMAGES_DIR': os.getenv('AQUACROP_IMAGES_DIR', 'src/static/images'),
+        'STATIC_URL_PREFIX': os.getenv('AQUACROP_STATIC_URL_PREFIX', '/static/'),
+        
+        # ETo估算方法配置
+        'ETO_METHOD': os.getenv('AQUACROP_ETO_METHOD', 'hargreaves_simplified'),  # 'observed'|'hargreaves_simplified'|'hargreaves_fao56'
+        'LATITUDE': float(os.getenv('AQUACROP_LATITUDE', 35.0)),  # 纬度，用于FAO-56计算
+        'ELEVATION': float(os.getenv('AQUACROP_ELEVATION', 100.0)),  # 海拔，用于FAO-56计算
         
         # 生育阶段定义-冠层覆盖度
         'GROWTH_STAGES_CANOPY_COVER': [
@@ -325,4 +379,4 @@ if __name__ == "__main__":
     print(f"应用目录: {cfg.APP_DIR}")
     print(f"数据目录: {cfg.DATA_DIR}")
     print(f"模型目录: {cfg.MODELS_DIR}")
-    print(f"日志目录: {cfg.LOGS_DIR}") 
+    print(f"日志目录: {cfg.LOGS_DIR}")

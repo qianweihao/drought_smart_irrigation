@@ -2,54 +2,208 @@ import os
 import pandas as pd
 from datetime import datetime
 import sys
+from functools import lru_cache
 
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(project_root)
 
 from src.utils.logger import logger
 from src.models.fao_model import FAOModel
+from config import Config
 
 class IrrigationService:
+    """智能灌溉服务类
+    提供旱作灌溉决策功能,包括土壤湿度计算、
+    根系深度系数获取、生育阶段系数计算等核心功能。
+    """
+    
     def __init__(self, config):
         self.config = config
         self.fao_model = FAOModel(config)
         self._last_model_run = None
+        self._cache_timestamp = None
         
-    def get_root_depth_coefficient(self, out_file):
-        """获取根系深度系数
+        # 验证配置
+        self._validate_config()
+        
+    def _validate_config(self):
+        """验证配置的有效性"""
+        required_configs = ['IRRIGATION_CONFIG', 'GROWTH_STAGE_COEFFICIENTS']
+        for config_name in required_configs:
+            if not hasattr(self.config, config_name):
+                logger.warning(f"配置项 {config_name} 不存在，将使用默认值")
+                
+    def _validate_humidity_inputs(self, max_humidity, real_humidity, min_humidity):
+        """验证湿度输入参数的有效性
+        
         Args:
-            out_file (str): 模型输出文件路径 
+            max_humidity (float): 最大土壤湿度
+            real_humidity (float): 实际土壤湿度  
+            min_humidity (float): 最小土壤湿度
+            
+        Raises:
+            ValueError: 当参数无效时抛出异常
+        """
+        # 检查参数类型
+        for name, value in [('max_humidity', max_humidity), 
+                           ('real_humidity', real_humidity), 
+                           ('min_humidity', min_humidity)]:
+            if not isinstance(value, (int, float)) or value is None:
+                raise ValueError(f"{name} 必须是数值类型，当前值: {value}")
+        
+        # 验证数值范围
+        irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
+        min_range = irrigation_config.get('HUMIDITY_MIN_RANGE', 0.0)
+        max_range = irrigation_config.get('HUMIDITY_MAX_RANGE', 100.0)
+        for name, value in [('max_humidity', max_humidity),
+                           ('real_humidity', real_humidity),
+                           ('min_humidity', min_humidity)]:
+            if not (min_range <= value <= max_range):
+                raise ValueError(f"{name} 必须在{min_range}-{max_range}范围内，当前值: {value}")
+        
+        # 检查逻辑关系 - 允许一定的容错性
+        if min_humidity > max_humidity:
+            logger.warning(f"土壤湿度参数顺序异常: min={min_humidity}, max={max_humidity}")
+            # 自动修正
+            min_humidity, max_humidity = max_humidity, min_humidity
+            logger.info(f"已自动修正为: min={min_humidity}, max={max_humidity}")
+            
+        return max_humidity, real_humidity, min_humidity
+        
+    def _safe_get_coefficient(self, func_name, *args, default_value=1.0):
+        """安全获取系数的统一方法
+        
+        Args:
+            func_name (str): 函数名称
+            *args: 函数参数
+            default_value (float): 默认值
+            
+        Returns:
+            float: 系数值
+        """
+        try:
+            func = getattr(self, func_name)
+            return func(*args)
+        except Exception as e:
+            logger.warning(f"{func_name}获取失败，使用默认值{default_value}: {str(e)}")
+            return default_value
+            
+    def _get_file_path(self, file_key):
+        """获取文件路径
+        
+        Args:
+            file_key (str): 文件键名
+            
+        Returns:
+            str: 完整文件路径
+        """
+        relative_path = Config.FILE_PATHS.get(file_key)
+        if not relative_path:
+            raise ValueError(f"未知的文件键: {file_key}")
+        return os.path.join(project_root, relative_path)
+        
+
+        
+    @lru_cache(maxsize=32)
+    def _get_cached_sensor_data(self, device_id, field_id, hour_timestamp):
+        """带缓存的传感器数据获取（按小时粒度缓存）
+        
+        Args:
+            device_id (str): 设备ID
+            field_id (str): 地块ID
+            hour_timestamp (str): 小时粒度时间戳，用于缓存过期控制
+            
+        Returns:
+            dict: 传感器数据
+        """
+        try:
+            from src.devices.soil_sensor import SoilSensor
+            soil_sensor = SoilSensor(device_id=device_id, field_id=field_id)
+            return soil_sensor.get_current_data()
+        except Exception as e:
+            logger.warning(f"获取传感器数据失败，使用默认值: {str(e)}")
+            return {
+                'fc': Config.DEFAULT_SOIL_PARAMS['fc'],
+                'sat': Config.DEFAULT_SOIL_PARAMS['sat'], 
+                'pwp': Config.DEFAULT_SOIL_PARAMS['pwp']
+            }
+        
+    def get_root_depth_coefficient(self, out_file=None):
+        """从模型输出文件中读取根系深度系数
+        
+        Args:
+            out_file (str, optional): 输出文件路径,如果为None则使用默认路径
+            
         Returns:
             float: 根系深度系数 (0.5 或 1.0)
         """
         try:
-            if not os.path.exists(out_file):
-                logger.warning(f"模型输出文件不存在: {out_file},使用默认根系深度系数1.0")
-                return 1.0
-            df = pd.read_csv(out_file, delim_whitespace=True, skiprows=10)
+            # 使用默认文件路径或传入的路径
+            if out_file is None:
+                file_path = self._get_file_path('model_output')
+            else:
+                file_path = out_file if os.path.isabs(out_file) else os.path.join(project_root, out_file)
+            
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                logger.warning(f"模型输出文件不存在: {file_path}")
+                return Config.DEFAULT_COEFFICIENTS['root_depth']
+            
+            # 读取CSV文件
+            df = pd.read_csv(file_path, delim_whitespace=True, skiprows=10)
+            
+            # 检查是否有数据和必要的列
             if df.empty:
-                logger.warning("模型输出文件为空,使用默认根系深度系数1.0")
-                return 1.0
-            df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y')
-            now = pd.to_datetime(datetime.now().date())
+                logger.warning(f"模型输出文件为空: {file_path}")
+                return Config.DEFAULT_COEFFICIENTS['root_depth']
+                
+            required_columns = ['Date', 'Zr']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                logger.warning(f"模型输出文件缺少必要列: {missing_columns}")
+                return Config.DEFAULT_COEFFICIENTS['root_depth']
+            
+            # 获取当前日期
+            current_date = datetime.now()
+            
+            # 将日期列转换为datetime类型
+            df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y', errors='coerce')
+            
+            # 过滤掉无效日期
+            df = df.dropna(subset=['Date'])
+            if df.empty:
+                logger.warning("模型输出文件中没有有效的日期数据")
+                return Config.DEFAULT_COEFFICIENTS['root_depth']
+            
+            now = pd.to_datetime(current_date.date())
             today_data = df[df['Date'] == now]
             
             if today_data.empty:
                 logger.warning(f"无法找到当前日期({now.strftime('%Y-%m-%d')})的数据，使用最接近的日期")
                 df['date_diff'] = abs((df['Date'] - now).dt.days)
-                today_data = df.loc[df['date_diff'].idxmin()]
+                closest_row = df.loc[df['date_diff'].idxmin()]
             else:
-                today_data = today_data.iloc[0]
-            root_depth = today_data['Zr'] if 'Zr' in today_data else 0.2
-            if root_depth < 0.3:
-                logger.info(f"当前根系深度为{root_depth}m,小于0.3m,应用系数0.5")
-                return 0.5
-            else:
-                logger.info(f"当前根系深度为{root_depth}m,大于等于0.3m,应用系数1.0")
-                return 1.0   
+                closest_row = today_data.iloc[0]
+                
+            # 获取根系深度
+            root_depth = closest_row['Zr'] if 'Zr' in closest_row else 0.2
+            
+            # 验证根系深度值
+            if pd.isna(root_depth) or not isinstance(root_depth, (int, float)):
+                logger.warning(f"根系深度值无效: {root_depth}")
+                return Config.DEFAULT_COEFFICIENTS['root_depth']
+            
+            # 根据根系深度计算系数
+            irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
+            threshold = irrigation_config.get('ROOT_DEPTH_THRESHOLD', 0.3)
+            coefficient = 0.5 if root_depth < threshold else 1.0
+            
+            logger.info(f"当前根系深度为{root_depth}m,系数为{coefficient}")
+            return coefficient
+                
         except Exception as e:
             logger.error(f"获取根系深度系数时出错: {str(e)}")
-            return 1.0  
+            return Config.DEFAULT_COEFFICIENTS['root_depth']  
     
     def get_growth_stage_coefficient(self):
         """获取生育阶段系数
@@ -57,17 +211,34 @@ class IrrigationService:
             float: 生育阶段系数
         """
         try:
-            growth_stages_file = os.path.join(project_root, 'data/growth/growth_stages.csv')
+            # 使用统一的文件路径获取方法
+            growth_stages_file = self._get_file_path('growth_stages')
+            
             if not os.path.exists(growth_stages_file):
-                logger.warning(f"生育阶段文件不存在: {growth_stages_file},使用默认系数1.0")
-                return 1.0
+                logger.warning(f"生育阶段文件不存在: {growth_stages_file},使用默认系数")
+                return Config.DEFAULT_COEFFICIENTS['growth_stage']
                 
             growth_stages_df = pd.read_csv(growth_stages_file)
             if growth_stages_df.empty:
-                logger.warning("生育阶段文件为空,使用默认系数1.0")
-                return 1.0
-            growth_stages_df['开始日期'] = pd.to_datetime(growth_stages_df['开始日期'])
-            growth_stages_df['结束日期'] = pd.to_datetime(growth_stages_df['结束日期'])
+                logger.warning("生育阶段文件为空,使用默认系数")
+                return Config.DEFAULT_COEFFICIENTS['growth_stage']
+                
+            # 检查必要的列是否存在
+            required_columns = ['开始日期', '结束日期', '阶段']
+            missing_columns = [col for col in required_columns if col not in growth_stages_df.columns]
+            if missing_columns:
+                logger.warning(f"生育阶段文件缺少必要列: {missing_columns}")
+                return Config.DEFAULT_COEFFICIENTS['growth_stage']
+                
+            growth_stages_df['开始日期'] = pd.to_datetime(growth_stages_df['开始日期'], errors='coerce')
+            growth_stages_df['结束日期'] = pd.to_datetime(growth_stages_df['结束日期'], errors='coerce')
+            
+            # 过滤掉无效日期
+            growth_stages_df = growth_stages_df.dropna(subset=['开始日期', '结束日期'])
+            if growth_stages_df.empty:
+                logger.warning("生育阶段文件中没有有效的日期数据")
+                return Config.DEFAULT_COEFFICIENTS['growth_stage']
+                
             now = datetime.now().date()
             current_stage = None
             for _, stage in growth_stages_df.iterrows():
@@ -77,19 +248,25 @@ class IrrigationService:
                 if start_date <= now <= end_date:
                     current_stage = stage['阶段']
                     break
-            #获取生育阶段系数
-            stage_coefficients = self.config.GROWTH_STAGE_COEFFICIENTS
+                    
+            # 安全获取生育阶段系数
+            if hasattr(self.config, 'GROWTH_STAGE_COEFFICIENTS'):
+                stage_coefficients = self.config.GROWTH_STAGE_COEFFICIENTS
+            else:
+                logger.warning("配置中缺少GROWTH_STAGE_COEFFICIENTS，使用默认值")
+                return Config.DEFAULT_COEFFICIENTS['growth_stage']
+                
             if current_stage and current_stage in stage_coefficients:
                 coefficient = stage_coefficients[current_stage]
                 logger.info(f"当前生育阶段为：{current_stage}，应用系数{coefficient}")
                 return coefficient
             else:
-                logger.warning(f"无法确定当前生育阶段或找不到对应系数,使用默认系数1.0")
-                return 1.0
+                logger.warning(f"无法确定当前生育阶段或找不到对应系数,使用默认系数")
+                return Config.DEFAULT_COEFFICIENTS['growth_stage']
                 
         except Exception as e:
             logger.error(f"获取生育阶段系数时出错: {str(e)}")
-            return 1.0  
+            return Config.DEFAULT_COEFFICIENTS['growth_stage']  
         
     def calculate_soil_humidity_differences(self, max_humidity, real_humidity, min_humidity):
         """计算土壤湿度指标
@@ -100,155 +277,260 @@ class IrrigationService:
             min_humidity (float): 最小土壤湿度，即萎蔫点(PWP) (%)
             
         Returns:
-            tuple: (田间持水量(mm), 萎蔫点(Pmm), 蓄水潜力(mm), 有效储水量(mm))
+            tuple: (SAT(mm), FC(mm), PWP(mm), diff_max_real_mm, diff_min_real_mm, diff_com_real_mm)
+            - SAT: 饱和含水量(mm)
+            - FC: 田间持水量(mm) 
+            - PWP: 萎蔫点含水量(mm)
+            - diff_max_real_mm: 饱和含水量与实际湿度差值(mm) [已弃用，仅为兼容性保留]
+            - diff_min_real_mm: 实际湿度与萎蔫点差值(mm)
+            - diff_com_real_mm: 田间持水量与实际湿度差值(mm)
         """
         try:
-            
-            diff_max_real = max_humidity - real_humidity  
-            diff_real_min = real_humidity - min_humidity  
+            # 验证输入参数
+            max_humidity, real_humidity, min_humidity = self._validate_humidity_inputs(
+                max_humidity, real_humidity, min_humidity
+            )
             
             logger.info(f"计算土壤湿度差异:max={max_humidity}%, real={real_humidity}%, min={min_humidity}%")
-            logger.info(f"差异结果:diff_max_real={diff_max_real}%, diff_real_min={diff_real_min}%")
             
-            soil_depth = self.config.IRRIGATION_CONFIG.get('SOIL_DEPTH_CM', 30.0)
+            # 获取配置参数
+            irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
+            soil_depth = irrigation_config.get('SOIL_DEPTH_CM', Config.DEFAULT_SOIL_PARAMS['depth_cm'])
             
-            out_file = os.path.join(project_root, 'data/model_output/wheat2024.out')
-            root_depth_coefficient = self.get_root_depth_coefficient(out_file)
+            # 安全获取系数
+            out_file = self._get_file_path('model_output')
+            root_depth_coefficient = self._safe_get_coefficient(
+                'get_root_depth_coefficient', out_file,
+                default_value=Config.DEFAULT_COEFFICIENTS['root_depth']
+            )
             
-            growth_stage_coefficient = self.get_growth_stage_coefficient()
+            growth_stage_coefficient = self._safe_get_coefficient(
+                'get_growth_stage_coefficient',
+                default_value=Config.DEFAULT_COEFFICIENTS['growth_stage']
+            )
             
-            device_id = self.config.IRRIGATION_CONFIG.get('DEFAULT_DEVICE_ID', '16031600028481')
-            field_id = self.config.IRRIGATION_CONFIG.get('DEFAULT_FIELD_ID', '1810564502987649024')
+            # 获取传感器数据
+            device_id = irrigation_config.get('DEFAULT_DEVICE_ID')
+            field_id = irrigation_config.get('DEFAULT_FIELD_ID')
             
-            from src.devices.soil_sensor import SoilSensor
-            soil_sensor = SoilSensor(device_id=device_id, field_id=field_id)
-            sensor_data = soil_sensor.get_current_data()
-            fc_percent = sensor_data.get('fc', 25.0)
-            sat_percent = sensor_data.get('sat',35.5)
-            pwp_percent = sensor_data.get('pwp',15.2)
+            # 生成小时粒度时间戳用于缓存控制
+            hour_timestamp = datetime.now().strftime('%Y-%m-%d-%H')
+            sensor_data = self._get_cached_sensor_data(device_id, field_id, hour_timestamp)
+            fc_percent = sensor_data.get('fc', Config.DEFAULT_SOIL_PARAMS['fc'])
+            sat_percent = sensor_data.get('sat', Config.DEFAULT_SOIL_PARAMS['sat'])
+            pwp_percent = sensor_data.get('pwp', Config.DEFAULT_SOIL_PARAMS['pwp'])
             
-            SAT = sat_percent * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            FC = fc_percent * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            PWP = pwp_percent * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
+            conversion_factor = soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
             
-            diff_max_real_mm = diff_max_real * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            diff_min_real_mm = diff_real_min * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            diff_com_real_mm = (fc_percent-real_humidity) * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
+            # 计算土壤参数 (mm)
+            SAT = sat_percent * conversion_factor
+            FC = fc_percent * conversion_factor  
+            PWP = pwp_percent * conversion_factor
+            
+            # 计算湿度差异 (mm) - 统一使用传感器数据作为基准
+            diff_max_real_mm = (sat_percent - real_humidity) * conversion_factor
+            diff_min_real_mm = (real_humidity - pwp_percent) * conversion_factor
+            diff_com_real_mm = (fc_percent - real_humidity) * conversion_factor
             
             logger.info(f"土壤湿度计算结果: FC={FC:.2f}, PWP={PWP:.2f}")
             logger.info(f"应用系数: 根系深度系数={root_depth_coefficient}, 生育阶段系数={growth_stage_coefficient}")
-            return SAT,FC, PWP, diff_max_real_mm, diff_min_real_mm,diff_com_real_mm
+            return SAT, FC, PWP, diff_max_real_mm, diff_min_real_mm, diff_com_real_mm
             
         except Exception as e:
             logger.error(f"计算土壤湿度差异时出错: {str(e)}")
             raise
             
-    def get_irrigation_decision(self, out_file, diff_max_real_mm, diff_min_real_mm,diff_com_real_mm):
-        """获取灌溉决策
+    def _load_and_validate_forecast_data(self, out_file):
+        """加载并验证预测数据
+        
         Args:
             out_file (str): 模型输出文件路径
-            diff_max_real_mm (float): 最大与实际湿度差值(mm)
+            
+        Returns:
+            tuple: (future_data, current_date)
+        """
+        if not os.path.exists(out_file):
+            raise FileNotFoundError(f"模型输出文件不存在: {out_file}")
+            
+        df = pd.read_csv(out_file, delim_whitespace=True, skiprows=10)
+        if df.empty:
+            raise ValueError("模型输出文件为空")
+            
+        # 验证必要的列
+        required_columns = ['Date', 'ETc', 'Rain']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"模型输出文件缺少必要列: {missing_columns}")
+            
+        df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y', errors='coerce')
+        df = df.dropna(subset=['Date'])
+        
+        if df.empty:
+            raise ValueError("模型输出文件中没有有效的日期数据")
+            
+        now = pd.to_datetime(datetime.now().date())
+        
+        # 获取预测天数和数据
+        max_forecast_days = getattr(self.config, 'IRRIGATION_CONFIG', {}).get('MAX_FORECAST_DAYS', 7)
+        future_data = df[
+            (df['Date'] >= now) & 
+            (df['Date'] <= (now + pd.to_timedelta(f'{max_forecast_days} days')))
+        ].copy()
+        
+        # 确保数据按日期排序并处理NaN值
+        future_data = future_data.sort_values('Date').copy()
+        future_data['ETc'] = future_data['ETc'].fillna(0)
+        future_data['Rain'] = pd.to_numeric(future_data['Rain'], errors='coerce').fillna(0)
+        
+        # 检查数据量是否足够
+        irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
+        min_days = irrigation_config.get('MIN_FORECAST_DATA_DAYS', 3)
+        if len(future_data) < min_days:
+            raise ValueError(f"没有足够的未来数据用于决策，当前仅有{len(future_data)}天，至少需要{min_days}天")
+            
+        # 计算累积蒸散量
+        future_data['Cumulative_ETcadj'] = future_data['ETc'].cumsum()
+        
+        return future_data, now
+        
+    def _analyze_rainfall(self, future_data):
+        """分析降雨情况
+        
+        Args:
+            future_data (DataFrame): 未来天气数据
+            
+        Returns:
+            tuple: (has_rain, first_rain_day, first_rain_amount)
+        """
+        has_rain = (future_data["Rain"] > 0).any()
+        first_rain_day = None
+        first_rain_amount = 0
+        
+        if has_rain:
+            rain_days = future_data[future_data['Rain'] > 0]
+            if not rain_days.empty:
+                first_rain_day = rain_days.iloc[0]['Date']
+                first_rain_amount = rain_days.iloc[0]['Rain']
+                
+        return has_rain, first_rain_day, first_rain_amount
+        
+
+    def get_irrigation_decision(self, out_file, diff_min_real_mm, diff_com_real_mm):
+        """获取灌溉决策
+        
+        Args:
+            out_file (str): 模型输出文件路径
             diff_min_real_mm (float): 实际与最小湿度差值(mm)
+            diff_com_real_mm (float): 田间持水量与实际湿度差值(mm)
             
         Returns:
             tuple: (date, irrigation_value, message)
         """
         try:
-            if not os.path.exists(out_file):
-                raise FileNotFoundError(f"模型输出文件不存在: {out_file}")
-                
-            df = pd.read_csv(out_file, delim_whitespace=True, skiprows=10)
-            if df.empty:
-                raise ValueError("模型输出文件为空")
-                
-            df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y')
-            now = pd.to_datetime(datetime.now().date())
+            # 加载和验证预测数据
+            future_data, now = self._load_and_validate_forecast_data(out_file)
             
-            # 获取预测天数和数据
-            max_forecast_days = self.config.IRRIGATION_CONFIG['MAX_FORECAST_DAYS']
-            future_data = df[
-                (df['Date'] >= now) & 
-                (df['Date'] <= (now + pd.to_timedelta(f'{max_forecast_days} days')))
-            ]
-            
-            if len(future_data) < 3:  
-                raise ValueError(f"没有足够的未来数据用于决策，当前仅有{len(future_data)}天")
+            # 获取配置
+            irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
             
             # 获取生育阶段系数和灌溉阈值
-            growth_stage_coefficient = self.get_growth_stage_coefficient()
-            irrigation_threshold = self.config.IRRIGATION_CONFIG['IRRIGATION_THRESHOLD'] * growth_stage_coefficient
+            growth_stage_coeff = self._safe_get_coefficient(
+                'get_growth_stage_coefficient',
+                default_value=Config.DEFAULT_COEFFICIENTS['growth_stage']
+            )
             
-            # 分析降雨情况
-            has_rain = (future_data["Rain"] > 0).any()
-            first_rain_day = None
-            first_rain_amount = 0
+            base_threshold = irrigation_config.get('IRRIGATION_THRESHOLD', Config.DEFAULT_COEFFICIENTS['irrigation_threshold'])
+            irrigation_threshold = base_threshold * growth_stage_coeff
             
-            if has_rain:
-                rain_days = future_data[future_data['Rain'] > 0]
-                if not rain_days.empty:
-                    first_rain_day = rain_days.iloc[0]['Date']
-                    first_rain_amount = rain_days.iloc[0]['Rain']
+            # 获取第三天的累积蒸散量 - 使用更稳健的方法
+            third_idx = min(2, len(future_data) - 1)  # 第三天或最后一天数据
+            third_day_etcadj = future_data.iloc[third_idx]['Cumulative_ETcadj']
             
-            # 计算蒸散量
-            future_data['Cumulative_ETcadj'] = future_data['ETc'].cumsum()
+            # 获取最小有效灌溉量
+            min_effective_irrigation = irrigation_config.get('MIN_EFFECTIVE_IRRIGATION', 5.0)
             
-            # 获取关键天数的数据
-            third_day = min(now + pd.to_timedelta('2 days'), future_data.iloc[-1]['Date'])
-            third_day_data = future_data.loc[future_data["Date"]==third_day]
-            
-            if third_day_data.empty:
-                raise ValueError(f"无法找到第三天({third_day.strftime('%Y-%m-%d')})的数据")
-                
-            third_day_etcadj = third_day_data['Cumulative_ETcadj'].values[0]
-            
-            # 获取最小有效灌溉量（默认5mm）
-            min_effective_irrigation = self.config.IRRIGATION_CONFIG.get('MIN_EFFECTIVE_IRRIGATION', 5.0)
-            
-            # 决策逻辑
+            # 检查临界情况（土壤水分低于萎蔫点）
             if diff_min_real_mm <= 0:
-                # 土壤水分已低于萎蔫点，立即灌溉至持水点
-                irrigation_value = min(diff_com_real_mm, 30.0) 
+                # 土壤水分低于萎蔫点，需要立即灌溉
+                max_irrigation = irrigation_config.get('MAX_SINGLE_IRRIGATION', 30.0)
+                irrigation_value = min(diff_com_real_mm, max_irrigation) 
                 irrigation_value = self._quantize_irrigation(irrigation_value)
                 return now, irrigation_value, "土壤水分已达临界水平，立即灌溉"
                 
+            # 检查水分是否充足
             if third_day_etcadj <= diff_min_real_mm * irrigation_threshold:
-                # 水分足够未来三天使用
+                logger.info(f"[NO_IRRIGATION] 水分充足 - third_day_etcadj={third_day_etcadj:.2f}, "
+                           f"available_to_pwp={diff_min_real_mm:.2f}, thresh={irrigation_threshold:.3f}")
                 return now, 0, "水分充足，今日不灌溉"
             
-            # 未来有降雨的情况
+            # 分析降雨情况
+            has_rain, first_rain_day, first_rain_amount = self._analyze_rainfall(future_data)
+            
+            # 计算距离降雨的天数
+            days_to_rain = None
+            if first_rain_day:
+                days_to_rain = (first_rain_day - now).days
+            
+            # 基于降雨的决策
+            # 分析降雨情况
+            rain_forecast_days = irrigation_config.get('RAIN_FORECAST_DAYS', 3)
+            min_rain_amount = irrigation_config.get('MIN_RAIN_AMOUNT', 5.0)
+            
             if has_rain:
-                days_to_rain = (first_rain_day - now).days if first_rain_day else max_forecast_days
+                # 分析降雨时间和雨量
+                days_to_rain = (first_rain_day - now).days if first_rain_day else 7
                 
-                # 降雨在3天以内且雨量充足（>5mm）
-                if days_to_rain <= 3 and first_rain_amount >= 5:
-                    return now, 0, f"未来{days_to_rain}天内有{first_rain_amount:.1f}mm降雨，延迟灌溉"
+                # 降雨在配置天数以内且雨量充足
+                if days_to_rain <= rain_forecast_days and first_rain_amount >= min_rain_amount:
+                    return now, 0, f"未来{days_to_rain}天内有{first_rain_amount:.1f}mm降雨,延迟灌溉"
                     
                 # 降雨在三天后，需要判断是否需要部分灌溉
-                if first_rain_day and first_rain_day > third_day:
+                three_days_from_now = now + pd.to_timedelta('2 days')
+                if first_rain_day and first_rain_day > three_days_from_now:
                     irrigation_value = third_day_etcadj - diff_min_real_mm * irrigation_threshold
                     if irrigation_value > min_effective_irrigation:
+                        irrigation_value = min(irrigation_value, irrigation_config.get('MAX_SINGLE_IRRIGATION', 30.0))
                         irrigation_value = self._quantize_irrigation(irrigation_value)
-                        return now, irrigation_value, f"今日需灌溉{irrigation_value:.1f}mm，降雨在三天后"
+                        return now, irrigation_value, f"今日需灌溉{irrigation_value:.1f}mm,降雨在三天后"
                 
-                # 近日有降雨但不足以满足需求
-                if first_rain_day and first_rain_day > now:
-                    first_rain_data = future_data[future_data["Date"]==first_rain_day]
+                # 近日有降雨但不足以满足需求（包括当天小雨）
+                if first_rain_day and first_rain_day >= now:
+                    first_rain_data = future_data[future_data["Date"] == first_rain_day]
                     if not first_rain_data.empty:
                         irrigation_value = first_rain_data['Cumulative_ETcadj'].values[0] - diff_min_real_mm * irrigation_threshold
                         if irrigation_value > min_effective_irrigation:
+                            irrigation_value = min(irrigation_value, irrigation_config.get('MAX_SINGLE_IRRIGATION', 30.0))
                             irrigation_value = self._quantize_irrigation(irrigation_value)
-                            return now, irrigation_value, f"今日需灌溉{irrigation_value:.1f}mm，近日有降雨但不足以满足需求"
-                    
+                            return now, irrigation_value, f"今日需灌溉{irrigation_value:.1f}mm,近日有降雨但不足以满足需求"
+                        
+                logger.info(f"[NO_IRRIGATION] 今日有降雨预报 - third_day_etcadj={third_day_etcadj:.2f}, "
+                           f"available_to_pwp={diff_min_real_mm:.2f}, thresh={irrigation_threshold:.3f}, "
+                           f"first_rain_day={first_rain_day}, first_rain_amount={first_rain_amount:.2f}mm, "
+                           f"days_to_rain={days_to_rain}")
                 return now, 0, "今日有降雨预报，不灌溉"
                 
-            # 无降雨情况
+            # 基于无降雨的决策
             irrigation_value = min(
                 diff_com_real_mm, 
                 third_day_etcadj - diff_min_real_mm * irrigation_threshold  
             )
             
+            # 应用单次最大灌溉量限制
+            max_single_irrigation = irrigation_config.get('MAX_SINGLE_IRRIGATION', 30.0)
+            irrigation_value = min(irrigation_value, max_single_irrigation)
+            
             # 确保灌溉量大于最小有效值
+            if irrigation_value <= 0:
+                logger.info(f"[NO_IRRIGATION] 土壤水分可支撑至第三天 - third_day_etcadj={third_day_etcadj:.2f}, "
+                           f"available_to_pwp={diff_min_real_mm:.2f}, thresh={irrigation_threshold:.3f}, "
+                           f"first_rain_day={first_rain_day}, first_rain_amount={first_rain_amount:.2f}mm, "
+                           f"days_to_rain={days_to_rain}")
+                return now, 0, "土壤水分可支撑至第三天，今日不灌溉"
             if irrigation_value <= min_effective_irrigation:
+                logger.info(f"[NO_IRRIGATION] 计算灌溉量小于最小有效灌溉量 - third_day_etcadj={third_day_etcadj:.2f}, "
+                           f"available_to_pwp={diff_min_real_mm:.2f}, thresh={irrigation_threshold:.3f}, "
+                           f"first_rain_day={first_rain_day}, first_rain_amount={first_rain_amount:.2f}mm, "
+                           f"days_to_rain={days_to_rain}, min_effective={min_effective_irrigation:.1f}mm")
                 return now, 0, f"计算灌溉量小于最小有效灌溉量({min_effective_irrigation:.1f}mm)，今日不灌溉"
             
             # 量化灌溉量
@@ -261,17 +543,19 @@ class IrrigationService:
 
     def _quantize_irrigation(self, irrigation_value):
         """量化灌溉量（分档）
+        
         Args:
             irrigation_value (float): 计算的灌溉量
+            
         Returns:
             float: 量化后的灌溉量
         """
-        # 灌溉档位
-        irrigation_levels = [0, 5, 10, 15, 20, 25, 30, 40, 50]
-        
         if irrigation_value <= 0:
             return 0
             
+        # 使用配置中定义的灌溉档位
+        irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
+        irrigation_levels = irrigation_config.get('IRRIGATION_LEVELS', [0, 5, 10, 15, 20, 25, 30, 40, 50])
         for level in irrigation_levels:
             if irrigation_value <= level:
                 return level
@@ -291,50 +575,57 @@ class IrrigationService:
             dict: 包含灌溉决策信息的字典
         """
         try:
-            device_id = self.config.IRRIGATION_CONFIG.get('DEFAULT_DEVICE_ID', '16031600028481')
-            from src.devices.soil_sensor import SoilSensor
-            soil_sensor = SoilSensor(device_id=device_id, field_id=field_id)
-            sensor_data = soil_sensor.get_current_data()
-            fc_percent = sensor_data.get('fc', 25.0)  
-            sat_percent = sensor_data.get('sat',35.5)
-            pwp_percent = sensor_data.get('pwp',15.2)
-            logger.info(f"使用湿度参数: sat_percent={sat_percent}, fc_percent={fc_percent}, pwp_percent={pwp_percent}, real_humidity={real_humidity}")
-            
-            SAT,FC, PWP, diff_max_real_mm, diff_min_real_mm,diff_com_real_mm = self.calculate_soil_humidity_differences(
+            # 验证输入参数 - 修复参数顺序并接收返回值
+            max_humidity, real_humidity, min_humidity = self._validate_humidity_inputs(
                 max_humidity, real_humidity, min_humidity
             )
             
-            now = datetime.now()
-            if (self._last_model_run is None or 
-                self._last_model_run.date() != now.date()):
-                self.fao_model.run_model()
-                self._last_model_run = now
+            # 获取传感器数据
+            irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
+            device_id = irrigation_config.get('DEFAULT_DEVICE_ID')
+            # 生成小时粒度时间戳用于缓存控制
+            hour_timestamp = datetime.now().strftime('%Y-%m-%d-%H')
+            sensor_data = self._get_cached_sensor_data(device_id, field_id, hour_timestamp)
+            fc_percent = sensor_data.get('fc', Config.DEFAULT_SOIL_PARAMS['fc'])
             
-            out_file = os.path.join(project_root, 'data/model_output/wheat2024.out')
-            date, irrigation_value, message = self.get_irrigation_decision(
-                out_file, diff_max_real_mm, diff_min_real_mm,diff_com_real_mm
+            # 计算土壤湿度差异
+            SAT, FC, PWP, _, diff_min_real_mm, diff_com_real_mm = self.calculate_soil_humidity_differences(
+                max_humidity, real_humidity, min_humidity
             )
             
-            root_depth_coefficient = self.get_root_depth_coefficient(out_file)
-            growth_stage_coefficient = self.get_growth_stage_coefficient()
-            soil_depth = self.config.IRRIGATION_CONFIG['SOIL_DEPTH_CM']
-            # 蓄水潜力 (mm)
-            storage_potential_mm = (max_humidity - real_humidity) * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            # 有效储水量 (mm)
-            effective_storage_mm = (real_humidity - fc_percent) * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            # 可利用储水量 (mm)
-            available_storage_mm = (real_humidity - min_humidity) * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            if storage_potential_mm < 0:
-                logger.warning(f"蓄水潜力计算出负值 ({storage_potential_mm}),调整为0")
-                storage_potential_mm = 0
-                
-            if effective_storage_mm < 0:
-                logger.warning(f"有效储水量计算出负值 ({effective_storage_mm}),调整为0")
-                effective_storage_mm = 0
+            # ✅ 获取传感器百分比，而不是入参
+            sat_percent = sensor_data.get('sat', Config.DEFAULT_SOIL_PARAMS['sat'])
+            pwp_percent = sensor_data.get('pwp', Config.DEFAULT_SOIL_PARAMS['pwp'])
+            
+            logger.info(f"传感器百分比: sat%={sat_percent}, fc%={fc_percent}, pwp%={pwp_percent}, real%={real_humidity}")
+            logger.info(f"入参对比: input_max={max_humidity}, input_min={min_humidity}")
+            
+            # 运行模型（如果需要）
+            self._ensure_model_run()
+            
+            # 获取灌溉决策
+            out_file = self._get_file_path('model_output')
+            date, irrigation_value, message = self.get_irrigation_decision(
+                out_file, diff_min_real_mm, diff_com_real_mm
+            )
+            
+            # 获取系数（用于日志记录）
+            root_depth_coefficient = self._safe_get_coefficient('get_root_depth_coefficient', out_file)
+            growth_stage_coefficient = self._safe_get_coefficient('get_growth_stage_coefficient')
+            
+            # 获取关键阈值信息用于meta字段
+            base_threshold = irrigation_config.get('IRRIGATION_THRESHOLD', Config.DEFAULT_COEFFICIENTS['irrigation_threshold'])
+            irrigation_threshold = base_threshold * growth_stage_coefficient
+            min_effective_irrigation = irrigation_config.get('MIN_EFFECTIVE_IRRIGATION', 5.0)
+            rain_forecast_days = irrigation_config.get('RAIN_FORECAST_DAYS', 3)
+            min_rain_amount = irrigation_config.get('MIN_RAIN_AMOUNT', 5.0)
+            
+            # 计算土壤深度
+            soil_depth = irrigation_config.get('SOIL_DEPTH_CM', Config.DEFAULT_SOIL_PARAMS['depth_cm'])
             
             logger.info(f"储水指标计算详情: 土壤深度={soil_depth}cm, 根系系数={root_depth_coefficient}, 生育阶段系数={growth_stage_coefficient}")
-            logger.info(f"百分比数据: 饱和含水量={max_humidity}%, 田间持水量={fc_percent}%, 凋萎点={min_humidity}%, 当前湿度={real_humidity}%")
-            logger.info(f"毫米数据: 蓄水潜力={storage_potential_mm}mm, 有效储水量={effective_storage_mm}mm, 可利用储水量={available_storage_mm}mm")
+            logger.info(f"百分比数据: 饱和含水量={sat_percent}%, 田间持水量={fc_percent}%, 凋萎点={pwp_percent}%, 当前湿度={real_humidity}%")
+            logger.info(f"毫米数据: 饱和含水量={SAT:.2f}mm, 田间持水量={FC:.2f}mm, 凋萎点={PWP:.2f}mm")
             
             return {
                 "date": date.strftime('%Y-%m-%d'),
@@ -342,101 +633,43 @@ class IrrigationService:
                 "message": f"当前土壤体积含水量为：{real_humidity:.2f} %, {message}",
                 "irrigation_value": round(irrigation_value, 2) if irrigation_value else 0,
                 "soil_data": {
-                    "current_humidity": round(real_humidity, 2),  
-                    "root_depth_coefficient": root_depth_coefficient,  
-                    "growth_stage_coefficient": growth_stage_coefficient, 
-                    "soil_depth": soil_depth,  
-                    "storage_potential": round(storage_potential_mm, 2), 
-                    "effective_storage": round(effective_storage_mm, 2),  
-                    "available_storage": round(available_storage_mm, 2),  
-                    "sat": round(SAT, 2),  
-                    "fc": round(FC, 2),  
-                    "pwp": round(PWP, 2),  
-                    "max_humidity": round(max_humidity, 2),  
-                    "min_humidity": round(min_humidity, 2), 
+                    "current_humidity": round(real_humidity, 2),
+                    "root_depth_coefficient": root_depth_coefficient,
+                    "growth_stage_coefficient": growth_stage_coefficient,
+                    "soil_depth": soil_depth,
+                    "storage_potential": round(SAT - PWP, 2),  # 蓄水潜力 = 饱和含水量 - 凋萎点
+                    "effective_storage": round(FC - PWP, 2),   # 有效储水量 = 田间持水量 - 凋萎点
+                    "available_storage": round(max(0, min(diff_com_real_mm, FC - PWP)), 2),  # 可利用储水量（夹紧到[0, 有效储水量]）
+                    "sat": round(SAT, 2),
+                    "fc": round(FC, 2),
+                    "pwp": round(PWP, 2),
+                    "sensor_sat_percent": round(sat_percent, 2),
+                    "sensor_fc_percent": round(fc_percent, 2),
+                    "sensor_pwp_percent": round(pwp_percent, 2),
+                    "input_max_humidity": round(max_humidity, 2),
+                    "input_min_humidity": round(min_humidity, 2),
                     "is_real_data": True
+                },
+                "meta": {
+                    "irrigation_threshold": round(irrigation_threshold, 3),
+                    "min_effective_irrigation": round(min_effective_irrigation, 2),
+                    "rain_forecast_days": rain_forecast_days,
+                    "min_rain_amount": round(min_rain_amount, 2)
                 }
             }
             
         except Exception as e:
             logger.error(f"生成灌溉决策时出错: {str(e)}")
             raise
-    # 未引用（备用）
-    def get_soil_data(self, field_id=None):
-        """获取土壤数据
-        Args:
-            field_id (str, optional): 地块ID. 如果不提供，则使用默认值
-        Returns:
-            dict: 土壤数据对象
-        """
-        try:
-            if field_id is None:
-                field_id = self.config.IRRIGATION_CONFIG.get('DEFAULT_FIELD_ID')
-                
-            device_id = self.config.IRRIGATION_CONFIG.get('DEFAULT_DEVICE_ID', '16031600028481')
-            
-            from src.devices.soil_sensor import SoilSensor
-            soil_sensor = SoilSensor(device_id=device_id, field_id=field_id)
-            sensor_data = soil_sensor.get_current_data()
-            
-            sat = sensor_data.get('sat', 35.5)  
-            fc = sensor_data.get('fc', 25.0)    
-            pwp = sensor_data.get('pwp', 15.2) 
-            real_humidity = sensor_data.get('real_humidity', 31.90) 
-            is_real_data = sensor_data.get('is_real_data', True)
-            
-            out_file = os.path.join(project_root, 'data/model_output/wheat2024.out')
-            root_depth_coefficient = self.get_root_depth_coefficient(out_file)
-            
-            growth_stage_coefficient = self.get_growth_stage_coefficient()
-            
-            soil_depth = self.config.IRRIGATION_CONFIG.get('SOIL_DEPTH_CM', 30.0)
-            
-            field_capacity = fc * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            
-            wilting_point = pwp * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            
-            saturation_water = sat * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            
-            storage_potential = (sat - real_humidity) * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            
-            effective_storage = (real_humidity - fc) * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            if effective_storage < 0:
-                effective_storage = 0
-            
-            available_storage = (real_humidity - pwp) * soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
-            
-            result = {
-                'field_id': field_id,
-                'device_id': device_id,
-                'max_humidity': sat,  
-                'min_humidity': pwp,  
-                'real_humidity': real_humidity,
-                'sat': sat,  
-                'pwp': pwp,  
-                'fc': fc, 
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'is_real_data': is_real_data,
-                'soil_depth': soil_depth,
-                'root_depth_coefficient': root_depth_coefficient,
-                'growth_stage_coefficient': growth_stage_coefficient,
-                'field_capacity_mm': field_capacity,
-                'wilting_point_mm': wilting_point,
-                'saturation_water_mm':saturation_water,
-                'storage_potential_mm': storage_potential,
-                'effective_storage_mm': effective_storage,
-                'available_storage_mm': available_storage
-            }
-            
-            logger.info(f"获取土壤数据成功: field_id={field_id}, real_humidity={result['real_humidity']}, is_real_data={result['is_real_data']}")
-            logger.info(f"土壤水分参数: 饱和含水量={sat}%, 田间持水量={fc}%, 凋萎点={pwp}%, 当前湿度={real_humidity}%")
-            logger.info(f"系数: 根系系数={root_depth_coefficient}, 生育期系数={growth_stage_coefficient}")
-            logger.info(f"计算的mm值: 饱和含水量={saturation_water:.2f}mm,田间持水量={field_capacity:.2f}mm, 凋萎点={wilting_point:.2f}mm, 可利用储水量={available_storage:.2f}mm,有效储水量={effective_storage:.2f}mm,蓄水潜力={storage_potential:.2f}mm")
-            
-            return result
-        except Exception as e:
-            logger.error(f"获取土壤数据失败: {str(e)}")
-            raise
+    
+    def _ensure_model_run(self):
+        """确保模型在当天已运行"""
+        now = datetime.now()
+        if (self._last_model_run is None or 
+            self._last_model_run.date() != now.date()):
+            self.fao_model.run_model()
+            self._last_model_run = now
+
 
 """
 if __name__ == "__main__":
@@ -451,7 +684,7 @@ if __name__ == "__main__":
         irrigation_service = IrrigationService(config)
         
         # 示例数据 - 可以根据实际情况修改
-        field_id = config.IRRIGATION_CONFIG['DEFAULT_FIELD_ID']
+        field_id = Config.IRRIGATION_CONFIG['DEFAULT_FIELD_ID']
         max_humidity = 35.5  # 最大土壤湿度
         min_humidity = 15.2  # 最小土壤湿度
         real_humidity = 25.8  # 实际土壤湿度
@@ -468,8 +701,8 @@ if __name__ == "__main__":
         print(f"消息: {result['message']}")
         print(f"灌溉量(mm): {result['irrigation_value']}")
         print("\n土壤数据:")
-        print(f"田间持水量: {result['soil_data']['field_capacity']}")
-        print(f"凋萎点: {result['soil_data']['wilting_point']}")
+        print(f"田间持水量(FC, mm): {result['soil_data']['fc']}")
+        print(f"凋萎点(PWP, mm): {result['soil_data']['pwp']}")
         print(f"当前湿度: {result['soil_data']['current_humidity']}")
         print(f"根系深度系数: {result['soil_data']['root_depth_coefficient']}")
         print(f"生育阶段系数: {result['soil_data']['growth_stage_coefficient']}")
