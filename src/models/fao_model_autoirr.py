@@ -1,3 +1,35 @@
+"""
+### 1. AQUACROP_CONFIG 
+- SIM_START_TIME - 模拟开始时间
+- SIM_END_TIME - 模拟结束时间
+### 2. FAO_CONFIG
+- PAR_FILE - 参数文件路径
+- OUTPUT_FILE - 输出文件路径
+- SUMMARY_FILE - 摘要文件路径
+- WEATHER_FILE - 天气文件路径
+- TEMP_WEATHER_FILE - 临时天气文件路径
+- FIXED_WEATHER_FILE - 修复后天气文件路径
+- SOIL_FILE - 土壤文件路径
+- SOIL_OUTPUT_FILE - 土壤输出文件路径
+### 3. CROP_PARAMS 
+- Kcbini - 初期作物系数
+- Kcbmid - 中期作物系数
+- Kcbend - 末期作物系数
+- Lini - 初期生长阶段长度
+- Ldev - 发育阶段长度
+- Lmid - 中期阶段长度
+- Lend - 末期阶段长度
+- h - 作物高度
+### 4. SOIL_PARAMS
+- Ze - 表层土壤蒸发深度
+- REW - 易蒸发水量
+- TEW - 总蒸发水量
+- cn - 径流曲线数
+- p - 土壤水分消耗系数
+- Ze_factor - 表层土壤蒸发深度因子
+- REW_factor - 易蒸发水量因子
+- TEW_factor - 总蒸发水量因子
+"""
 import os
 import time
 import subprocess

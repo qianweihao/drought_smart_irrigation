@@ -1,32 +1,23 @@
 """
 天气数据处理模块
-
-本模块提供天气数据处理和格式转换功能，主要包括：
-1. 气象数据验证和清理
-2. 参考作物蒸散发量计算(基于FAO-56 Penman-Monteith方程)
-3. 天气数据转换为FAO模型所需格式
-
 主要组件:
 - clean_weather_data: 天气数据清理和修复函数
 - validate_weather_data: 天气数据验证函数
 - process_weather_data: 天气数据处理和格式转换函数
 - Weather_wth: 兼容旧版接口的天气数据处理函数
 - WeatherET: 天气数据处理类,主要用于FAO模型
-
-使用示例:
-```python
-# 使用WeatherET类处理数据
-weather_data = pd.read_csv("irrigation_weather.csv")
-wth_et = WeatherET(comment='drought irrigation')
-wth_et.customload(weather_data, start_date="2024-001", end_date="2024-365")
-wth_et.savefile("weather.wth")
-
-# 直接处理数据文件
-process_weather_data("irrigation_weather.csv", "weather.wth", auto_fix=True)
-
-# 使用兼容接口
-Weather_wth("input.wth", "output.wth")
-```
+1. WEATHER_CONFIG (4个参数)
+在 WeatherET 类的 __init__ 方法中使用：
+- elevation - 海拔高度 (默认值: 100.0)
+- latitude - 纬度 (默认值: 35.0)
+- wind_height - 风速测量高度 (默认值: 2.0)
+- reference_crop - 参考作物类型 (默认值: 'S') 
+2. WEATHER_STATION_CONFIG (4个参数)
+在 process_weather_data 函数中使用：
+- reference_crop - 参考作物类型 (默认值: 'S')
+- elevation - 海拔高度 (默认值: 100.0)
+- latitude - 纬度 (默认值: 35.0)
+- wind_height - 风速测量高度 (默认值: 2.0)
 """
 import os
 import sys

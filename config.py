@@ -112,7 +112,7 @@ class Config:
 
     # 灌溉决策基础参数配置
     IRRIGATION_CONFIG = {
-        'DEFAULT_FIELD_ID': os.getenv('DEFAULT_FIELD_ID', '1810565648737284096'),
+        'DEFAULT_FIELD_ID': os.getenv('DEFAULT_FIELD_ID', '1810564502987649024'),
         'DEFAULT_DEVICE_ID': os.getenv('DEFAULT_DEVICE_ID', '16031600028481'),
         'SOIL_DEPTH_CM': int(os.getenv('SOIL_DEPTH_CM', 30)),
         'MAX_FORECAST_DAYS': int(os.getenv('MAX_FORECAST_DAYS', 15)),
@@ -179,7 +179,25 @@ class Config:
         'DEFAULT_SOIL_DEPTH': float(os.getenv('DEFAULT_SOIL_DEPTH', 30.0)),
         'HUMIDITY_10CM_DEFAULT': float(os.getenv('HUMIDITY_10CM_DEFAULT', 15.0)),
         'HUMIDITY_20CM_DEFAULT': float(os.getenv('HUMIDITY_20CM_DEFAULT', 20.0)),
-        'HUMIDITY_30CM_DEFAULT': float(os.getenv('HUMIDITY_30CM_DEFAULT', 25.0))
+        'HUMIDITY_30CM_DEFAULT': float(os.getenv('HUMIDITY_30CM_DEFAULT', 25.0)),
+        
+        # API配置
+        'API_TIMEOUT': int(os.getenv('API_TIMEOUT', 15)),
+        'API_MAX_RETRIES': int(os.getenv('API_MAX_RETRIES', 3)),
+        'API_MAX_WAIT_TIME': int(os.getenv('API_MAX_WAIT_TIME', 10)),
+        'HEALTH_CHECK_TIMEOUT': int(os.getenv('HEALTH_CHECK_TIMEOUT', 5)),
+        
+        # 熔断器配置
+        'CIRCUIT_BREAKER_FAILURE_THRESHOLD': int(os.getenv('CIRCUIT_BREAKER_FAILURE_THRESHOLD', 5)),
+        'CIRCUIT_BREAKER_RECOVERY_TIMEOUT': int(os.getenv('CIRCUIT_BREAKER_RECOVERY_TIMEOUT', 60)),
+        
+        # 重试策略配置
+        'RETRY_TOTAL': int(os.getenv('RETRY_TOTAL', 2)),
+        'RETRY_BACKOFF_FACTOR': float(os.getenv('RETRY_BACKOFF_FACTOR', 1.0)),
+        
+        # 历史数据配置
+        'DEFAULT_HISTORY_DAYS': int(os.getenv('DEFAULT_HISTORY_DAYS', 30)),
+        'SMOOTH_WINDOW': int(os.getenv('SMOOTH_WINDOW', 3))
     }
 
     # 灌溉服务默认土壤参数配置

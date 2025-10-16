@@ -1,3 +1,51 @@
+"""
+### 1. AQUACROP_CONFIG 配置组
+模拟时间配置：
+- SIM_START_TIME : 模拟开始时间 ('2025/10/1')
+- SIM_END_TIME : 模拟结束时间 ('2026/6/1')
+- PLANTING_DATE : 种植日期 ('10/15')
+作物参数：
+- CROP_NAME : 作物名称 ('Wheat')
+土壤参数：
+- SOIL_TEXTURE : 土壤质地 ('custom')
+- SOIL_SATURATION : 土壤饱和含水量 (0.4058)
+- SOIL_FIELD_CAPACITY : 土壤田间持水量 (0.287)
+- SOIL_WILTING_POINT : 土壤凋萎点 (0.239)
+- SOIL_KSAT : 土壤饱和导水率 (590)
+- SOIL_PENETRABILITY : 土壤渗透性 (100)
+灌溉管理：
+- IRR_FREQUENCY : 灌溉频率 ('30D')
+- IRR_DEPTH : 灌溉深度 (30)
+初始水分含量：
+- INITIAL_WC_TYPE : 初始水分类型 ('Prop')
+- INITIAL_WC_METHOD : 初始水分方法 ('Layer')
+- INITIAL_WC_DEPTH_LAYER : 初始水分深度层 ([1])
+- INITIAL_WC_VALUE : 初始水分值 (['FC'])
+文件路径：
+- WEATHER_INPUT_CSV : 气象输入CSV文件路径
+- WEATHER_OUTPUT_TXT : 气象输出TXT文件路径
+- OUTPUT_DIR : 输出目录路径
+- IMAGES_DIR : 图像目录路径
+- STATIC_URL_PREFIX : 静态文件URL前缀
+ETo估算配置:
+- ETO_METHOD : ETo估算方法 ('hargreaves_simplified')
+- LATITUDE : 纬度 (35.0)
+- ELEVATION : 海拔 (100.0)
+生育阶段定义：
+- GROWTH_STAGES_DAP : 基于DAP的生育阶段定义
+- GROWTH_STAGES_CANOPY_COVER : 基于冠层覆盖度的生育阶段定义
+### 2. FAO_CONFIG 配置组
+- TEMP_WEATHER_FILE : 临时气象文件路径，用于.wth格式文件
+### 3. IRRIGATION_CONFIG 配置组
+- DEFAULT_DEVICE_ID : 默认设备ID ('16031600028481')
+- DEFAULT_FIELD_ID : 默认田块ID ('1810564502987649024')
+### 4. ModelConfig 类（内部配置）
+- SOIL_LAYERS : 土壤层数 (3)
+- CHART_FIGSIZE : 图表尺寸 (10, 6)
+- DPI : 图像分辨率 (100)
+- CHART_COLORS : 图表颜色配置
+- CHART_FONTS : 图表字体配置
+"""
 import pandas as pd
 import os
 import datetime
@@ -130,21 +178,38 @@ def validate_config(config):
         
         # 注意：PLANTING_DATE格式为MM/DD，由AquaCrop库处理，不在此处验证日期范围
     
-    # 文件路径校验
+    # 文件路径校验 - 使用绝对路径
+    # 获取项目根目录
+    current_dir = os.path.dirname(__file__)
+    project_root = os.path.abspath(os.path.join(current_dir, '../../'))
+    
     path_keys = ['OUTPUT_DIR']  # 去掉WEATHER_INPUT_CSV的硬校验
     for key in path_keys:
         if key in config:
             path = config[key]
+            # 转换为绝对路径
+            if not os.path.isabs(path):
+                abs_path = os.path.join(project_root, path)
+            else:
+                abs_path = path
+                
             if key == 'OUTPUT_DIR':
                 # 输出目录可以不存在，会自动创建
-                parent_dir = os.path.dirname(path) if os.path.dirname(path) else '.'
+                parent_dir = os.path.dirname(abs_path)
                 if not os.path.exists(parent_dir):
                     logger.warning(f"输出目录的父目录不存在: {parent_dir}")
     
     # 可选的CSV文件校验（如果配置了但不存在则警告）
     csv_path = config.get('WEATHER_INPUT_CSV')
-    if csv_path and not os.path.exists(csv_path):
-        logger.warning(f"配置的 WEATHER_INPUT_CSV 不存在: {csv_path}，将尝试使用 WTH 文件")
+    if csv_path:
+        # 转换为绝对路径
+        if not os.path.isabs(csv_path):
+            abs_csv_path = os.path.join(project_root, csv_path)
+        else:
+            abs_csv_path = csv_path
+            
+        if not os.path.exists(abs_csv_path):
+            logger.warning(f"配置的 WEATHER_INPUT_CSV 不存在: {abs_csv_path}，将尝试使用 WTH 文件")
     
     # ETo方法校验
     if 'ETO_METHOD' in config:

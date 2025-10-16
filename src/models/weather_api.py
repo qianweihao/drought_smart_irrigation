@@ -3,11 +3,28 @@
 1. 获取历史天气数据
 2. 获取未来15天天气预报
 3. 格式：实际值+预测数据+历史均值
-
-支持多种作物：
-- 小麦：生长季跨年(10月1日-次年6月1日)
-- 玉米:生长季不跨年(7月1日-9月30日)
-- 棉花:生长季不跨年(4月10日-10月31日)
+### 1. WEATHER_CONFIG (20个参数) 地理位置参数
+- latitude - 纬度 (默认值: 35)
+- longitude - 经度 (默认值: 113) 作物类型参数 (1个)
+- crop_type - 作物类型 (默认值: 'wheat') 小麦生长季参数 (4个)
+- wheat_season_start_month - 小麦生长季开始月份 (默认值: 10)
+- wheat_season_start_day - 小麦生长季开始日期 (默认值: 1)
+- wheat_season_end_month - 小麦生长季结束月份 (默认值: 6)
+- wheat_season_end_day - 小麦生长季结束日期 (默认值: 1) 玉米生长季参数 (4个)
+- corn_season_start_month - 玉米生长季开始月份 (默认值: 7)
+- corn_season_start_day - 玉米生长季开始日期 (默认值: 1)
+- corn_season_end_month - 玉米生长季结束月份 (默认值: 9)
+- corn_season_end_day - 玉米生长季结束日期 (默认值: 30) 棉花生长季参数 (4个)
+- cotton_season_start_month - 棉花生长季开始月份 (默认值: 4)
+- cotton_season_start_day - 棉花生长季开始日期 (默认值: 10)
+- cotton_season_end_month - 棉花生长季结束月份 (默认值: 10)
+- cotton_season_end_day - 棉花生长季结束日期 (默认值: 31) API请求参数 (3个)
+- history_years - 历史数据年数 (默认值: 5)
+- api_timeout - API请求超时时间(默认值: 15)
+- max_retries - API请求最大重试次数 (默认值: 3) 历史数据处理参数 (2个)
+- wheat_season_start_month - 用于历史数据筛选 (默认值: 8,在 is_after_forecast 函数中)
+- wheat_season_end_month - 用于历史数据筛选 (默认值: 7,在 is_after_forecast 函数中)
+- wheat_season_end_day - 用于历史数据筛选 (默认值: 31,在 is_after_forecast 函数中)
 """
 import os
 import sys

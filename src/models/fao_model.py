@@ -1,3 +1,35 @@
+"""
+### 1. AQUACROP_CONFIG 配置项，模拟时间范围参数：
+- SIM_START_TIME : '2025/10/1' - 模拟开始时间
+- SIM_END_TIME : '2026/6/1' - 模拟结束时间
+### 2. FAO_CONFIG 配置项，文件路径参数：
+- PAR_FILE : 'wheat2024.par' - FAO模型参数文件名
+- OUTPUT_FILE : 'wheat2024.out' - FAO模型输出文件名
+- SUMMARY_FILE : 'wheat2024.sum' - FAO模型摘要文件名
+- WEATHER_FILE : 'data/weather/irrigation_weather.csv' - 原始天气数据文件路径
+- TEMP_WEATHER_FILE : 'data/weather/drought_irrigation.wth' - 临时天气文件路径
+- FIXED_WEATHER_FILE : 'data/weather/drought_irrigation_fixed.wth' - 修复后天气文件路径
+- SOIL_FILE : 'data/soil/irrigation_soilprofile_sim.csv' - 土壤数据文件路径
+- SOIL_OUTPUT_FILE : 'data/soil/drought_irrigation.sol' - 土壤输出文件路径
+### 3. CROP_PARAMS 配置项，作物系数参数：
+- Kcbini : 0.15 - 初期作物系数
+- Kcbmid : 1.10 - 中期作物系数
+- Kcbend : 0.20 - 末期作物系数 生育期长度参数（天数）：
+- Lini : 20 - 初期阶段长度
+- Ldev : 50 - 发育阶段长度
+- Lmid : 70 - 中期阶段长度
+- Lend : 30 - 末期阶段长度 作物高度参数：
+- hmax : 1.0 - 最大作物高度（米）
+### 4. SOIL_PARAMS 配置项， 土壤水分特征参数：
+- thetaFC : 0.327 - 田间持水量（体积含水量）
+- thetaWP : 0.10 - 萎蔫点含水量（体积含水量）
+- theta0 : 0.327 - 初始土壤含水量（体积含水量） 根系发育参数：
+- Zrini : 0.20 - 初始根系深度（米）
+- Zrmax : 1.7 - 最大根系深度（米） 土壤物理参数：
+- pbase : 0.55 - 基础土壤水分消耗系数
+- Ze : 0.10 - 土壤蒸发层深度（米）
+- REW : 9.0 - 易蒸发水量（毫米）
+"""
 import os
 import time
 import subprocess

@@ -1,3 +1,32 @@
+"""
+### 1. IRRIGATION_CONFIG 配置项
+- HUMIDITY_MIN_RANGE 和 HUMIDITY_MAX_RANGE ：用于验证湿度输入参数的有效范围
+- SOIL_DEPTH_CM ：土壤深度（厘米），用于土壤湿度计算的转换因子
+- ROOT_DEPTH_THRESHOLD :根系深度阈值,用于判断根系深度系数(0.3米)
+- DEFAULT_DEVICE_ID 和 DEFAULT_FIELD_ID :默认设备ID和地块ID,用于获取传感器数据
+- IRRIGATION_THRESHOLD ：基础灌溉阈值，与生育阶段系数相乘得到实际阈值
+- MIN_EFFECTIVE_IRRIGATION :最小有效灌溉量(5.0mm)
+- MAX_SINGLE_IRRIGATION :单次最大灌溉量(30.0mm)
+- RAIN_FORECAST_DAYS :降雨预报考虑天数(3天)
+- MIN_RAIN_AMOUNT :最小有效降雨量(5.0mm)
+- IRRIGATION_LEVELS ：灌溉量分档列表 [0, 5, 10, 15, 20, 25, 30, 40, 50]
+- MAX_FORECAST_DAYS :最大预报天数(7天)
+- MIN_FORECAST_DATA_DAYS :最小预报数据天数(3天)
+### 2. DEFAULT_SOIL_PARAMS 配置项
+- fc ：田间持水量百分比，作为传感器数据的默认值
+- sat ：饱和含水量百分比，作为传感器数据的默认值
+- pwp ：萎蔫点含水量百分比，作为传感器数据的默认值
+- depth_cm ：默认土壤深度（厘米）
+### 3. DEFAULT_COEFFICIENTS 配置项
+- root_depth ：默认根系深度系数，当无法从模型文件获取时使用
+- growth_stage ：默认生育阶段系数，当无法确定当前生育阶段时使用
+- irrigation_threshold ：默认灌溉阈值系数
+### 4. FILE_PATHS 配置项
+- model_output ：模型输出文件路径，用于读取根系深度和蒸散量数据
+- growth_stages ：生育阶段文件路径，用于确定当前生育阶段
+### 5. GROWTH_STAGE_COEFFICIENTS 配置项
+- 生育阶段系数字典，根据当前生育阶段获取对应的系数值
+"""
 import os
 import pandas as pd
 from datetime import datetime
