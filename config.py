@@ -72,7 +72,7 @@ class Config:
     # 文件路径配置 - 使用相对路径，自动适配不同环境
     FILE_PATHS = {
         'model_output': os.path.join('data', 'model_output', 'wheat2024.out'),
-        'growth_stages': os.path.join('data', 'growth', 'growth_stages.csv'),
+        'growth_stages': os.path.join('data', 'model_output', 'growth_stages.csv'), 
         'root_depth': os.path.join('data', 'growth', 'root_depth.csv'),
         'weather_data': os.path.join('data', 'weather', 'irrigation_weather.csv'),
         'soil_profile': os.path.join('data', 'soil', 'irrigation_soilprofile_sim.csv')
@@ -301,7 +301,12 @@ class Config:
         'TEMP_WEATHER_FILE': os.getenv('FAO_TEMP_WEATHER_FILE', 'data/weather/drought_irrigation.wth'),
         'FIXED_WEATHER_FILE': os.getenv('FAO_FIXED_WEATHER_FILE', 'data/weather/drought_irrigation_fixed.wth'),
         'SOIL_FILE': os.getenv('FAO_SOIL_FILE', 'data/soil/irrigation_soilprofile_sim.csv'),
-        'SOIL_OUTPUT_FILE': os.getenv('FAO_SOIL_OUTPUT_FILE', 'data/soil/drought_irrigation.sol')
+        'SOIL_OUTPUT_FILE': os.getenv('FAO_SOIL_OUTPUT_FILE', 'data/soil/drought_irrigation.sol'),
+        
+        # ETref数据集成配置
+        'FAO_OUTPUT_FILE': os.getenv('FAO_ETREF_OUTPUT_FILE', 'wheat2024.out'),  # FAO模型输出文件路径
+        'USE_FAO_ETREF': os.getenv('USE_FAO_ETREF', 'true').lower() == 'true',  # 是否使用FAO模型的ETref数据
+        'ETREF_FALLBACK_METHOD': os.getenv('ETREF_FALLBACK_METHOD', 'hargreaves_simplified')  # FAO数据不可用时的回退方法
     }
     
     # 天气模块配置

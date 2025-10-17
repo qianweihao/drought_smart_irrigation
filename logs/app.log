@@ -763,3 +763,4 @@ jinja2.exceptions.UndefinedError: 'soil_data' is undefined
 2025-10-16 16:52:58,844 INFO: 应用启动完成 [in f:\drought_smart_irrigation\src\app.py:103]
 2025-10-16 16:57:15,276 INFO: 应用启动完成 [in f:\drought_smart_irrigation\src\app.py:103]
 2025-10-16 17:03:19,973 INFO: 应用启动完成 [in f:\drought_smart_irrigation\src\app.py:103]
+2025-10-16 17:03:25,584 INFO: 应用启动完成 [in f:\drought_smart_irrigation\src\app.py:103]
