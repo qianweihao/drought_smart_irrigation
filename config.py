@@ -69,7 +69,7 @@ class Config:
     MODELS_DIR = os.path.join(APP_DIR, 'models')
     LOGS_DIR = os.path.join(project_root, 'logs')
     
-    # 文件路径配置 - 使用相对路径，自动适配不同环境
+    # 文件路径配置
     FILE_PATHS = {
         'model_output': os.path.join('data', 'model_output', 'wheat2024.out'),
         'growth_stages': os.path.join('data', 'model_output', 'growth_stages.csv'), 
@@ -86,37 +86,37 @@ class Config:
         'smtp_port': int(os.getenv('SMTP_PORT', 465))
     }
 
-    # 作物参数-ETc
+    # 作物参数-ETc-FAO
     CROP_PARAMS = {
-        'Kcbini': float(os.getenv('KCBINI', 0.15)),
-        'Kcbmid': float(os.getenv('KCBMID', 1.10)),
-        'Kcbend': float(os.getenv('KCBEND', 0.20)),
-        'Lini': int(os.getenv('LINI', 20)),
-        'Ldev': int(os.getenv('LDEV', 50)),
-        'Lmid': int(os.getenv('LMID', 70)),
-        'Lend': int(os.getenv('LEND', 30)),
-        'hmax': float(os.getenv('HMAX', 1))
+        'Kcbini': float(os.getenv('KCBINI', 0.15)),#初始期基础作物系数
+        'Kcbmid': float(os.getenv('KCBMID', 1.10)),#盛长期基础作物系数
+        'Kcbend': float(os.getenv('KCBEND', 0.20)),#末期基础作物系数
+        'Lini': int(os.getenv('LINI', 20)), #初始期天数
+        'Ldev': int(os.getenv('LDEV', 50)), #速生期天数
+        'Lmid': int(os.getenv('LMID', 70)), #盛长期天数
+        'Lend': int(os.getenv('LEND', 30)), #末期天数
+        'hmax': float(os.getenv('HMAX', 1)) #株高
     }
 
-    # 土壤参数-ETc
+    # 土壤参数-ETc-FAO
     SOIL_PARAMS = {
         'thetaFC': float(os.getenv('THETA_FC', 0.327)),
         'thetaWP': float(os.getenv('THETA_WP', 0.10)),
         'theta0': float(os.getenv('THETA_0', 0.327)),
-        'Zrini': float(os.getenv('ZR_INI', 0.20)),
-        'Zrmax': float(os.getenv('ZR_MAX', 1.7)),
-        'pbase': float(os.getenv('P_BASE', 0.55)),
-        'Ze': float(os.getenv('ZE', 0.10)),
-        'REW': float(os.getenv('REW', 9))
+        'Zrini': float(os.getenv('ZR_INI', 0.20)),#取0.2-0.3m
+        'Zrmax': float(os.getenv('ZR_MAX', 1.5)),#按中等情况设定，冬小麦通常 1.2–1.5m；深厚壤土、无障碍的土壤可取 1.8–2.0m；若有硬结层/浅土，保守用 0.8–1.0m
+        'pbase': float(os.getenv('P_BASE', 0.55)),#无胁迫亏缺比例的基值，冬小麦基准值0.55
+        'Ze': float(os.getenv('ZE', 0.10)),#表层蒸发土层厚度，0.10–0.15m
+        'REW': float(os.getenv('REW', 9)) #易蒸发水量，粗质（砂/壤砂）：6–7mm;中等（壤土/粉壤/壤壤）：8–10mm;细质（粘壤/粘土）：10–12mm
     }
 
     # 灌溉决策基础参数配置
     IRRIGATION_CONFIG = {
-        'DEFAULT_FIELD_ID': os.getenv('DEFAULT_FIELD_ID', '1810564502987649024'),
-        'DEFAULT_DEVICE_ID': os.getenv('DEFAULT_DEVICE_ID', '16031600028481'),
+        'DEFAULT_FIELD_ID': os.getenv('DEFAULT_FIELD_ID', '1810564502987649024'),#田块id
+        'DEFAULT_DEVICE_ID': os.getenv('DEFAULT_DEVICE_ID', '16031600028481'),#设备id
         'SOIL_DEPTH_CM': int(os.getenv('SOIL_DEPTH_CM', 30)),
         'MAX_FORECAST_DAYS': int(os.getenv('MAX_FORECAST_DAYS', 15)),
-        'IRRIGATION_THRESHOLD': float(os.getenv('IRRIGATION_THRESHOLD', 0.6)),
+        'IRRIGATION_THRESHOLD': float(os.getenv('IRRIGATION_THRESHOLD', 0.6)),#基础灌溉阈值
         'MIN_EFFECTIVE_IRRIGATION': float(os.getenv('MIN_EFFECTIVE_IRRIGATION', 5.0)),
         # 灌溉量分档配置
         'IRRIGATION_LEVELS': [0, 5, 10, 15, 20, 25, 30, 40, 50],
@@ -167,7 +167,7 @@ class Config:
         'ALERT_EMAIL_RECIPIENTS': os.getenv('ALERT_EMAIL_RECIPIENTS', '').split(',')
     }
 
-    # 墒情传感器默认值配置
+    # 墒情传感器默认值配置-soil_sensor
     SOIL_SENSOR_DEFAULTS = {
         # 默认数据配置
         'DEFAULT_MAX_HUMIDITY': float(os.getenv('DEFAULT_MAX_HUMIDITY', 35.5)),
@@ -200,7 +200,7 @@ class Config:
         'SMOOTH_WINDOW': int(os.getenv('SMOOTH_WINDOW', 3))
     }
 
-    # 灌溉服务默认土壤参数配置
+    # 灌溉服务默认土壤参数配置-irrigation_service
     DEFAULT_SOIL_PARAMS = {
         'fc': float(os.getenv('DEFAULT_SOIL_FC', 25.0)),
         'sat': float(os.getenv('DEFAULT_SOIL_SAT', 35.5)),
@@ -243,7 +243,7 @@ class Config:
         'SOIL_TEXTURE':os.getenv('AQUACROP_SOIL_TEXTURE', 'custom'),
         'SOIL_KSAT': float(os.getenv('AQUACROP_SOIL_KSAT', 590)),
         'SOIL_PENETRABILITY': float(os.getenv('AQUACROP_SOIL_PENETRABILITY', 100)),
-        # 土壤水力特征参数（备用）
+        # 土壤水力特征参数（备用）-优先使用soil_senso计算结果
         'SOIL_FIELD_CAPACITY': float(os.getenv('AQUACROP_SOIL_FC', 0.287)),
         'SOIL_WILTING_POINT': float(os.getenv('AQUACROP_SOIL_WP', 0.239)),
         'SOIL_SATURATION': float(os.getenv('AQUACROP_SOIL_SAT', 0.4058)),
