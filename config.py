@@ -110,20 +110,20 @@ class Config:
         'REW': float(os.getenv('REW', 9)) #易蒸发水量，粗质（砂/壤砂）：6–7mm;中等（壤土/粉壤/壤壤）：8–10mm;细质（粘壤/粘土）：10–12mm
     }
 
-    # 灌溉决策基础参数配置
+    # 灌溉决策基础参数配置-irrigation_service
     IRRIGATION_CONFIG = {
         'DEFAULT_FIELD_ID': os.getenv('DEFAULT_FIELD_ID', '1810564502987649024'),#田块id
         'DEFAULT_DEVICE_ID': os.getenv('DEFAULT_DEVICE_ID', '16031600028481'),#设备id
         'SOIL_DEPTH_CM': int(os.getenv('SOIL_DEPTH_CM', 30)),
         'MAX_FORECAST_DAYS': int(os.getenv('MAX_FORECAST_DAYS', 15)),
         'IRRIGATION_THRESHOLD': float(os.getenv('IRRIGATION_THRESHOLD', 0.6)),#基础灌溉阈值
-        'MIN_EFFECTIVE_IRRIGATION': float(os.getenv('MIN_EFFECTIVE_IRRIGATION', 5.0)),
+        'MIN_EFFECTIVE_IRRIGATION': float(os.getenv('MIN_EFFECTIVE_IRRIGATION', 5.0)),#最小灌溉量
         # 灌溉量分档配置
         'IRRIGATION_LEVELS': [0, 5, 10, 15, 20, 25, 30, 40, 50],
         # 降雨相关阈值
         'MIN_RAIN_AMOUNT': float(os.getenv('MIN_RAIN_AMOUNT', 5.0)),
         'RAIN_FORECAST_DAYS': int(os.getenv('RAIN_FORECAST_DAYS', 3)),
-        # 根系深度阈值
+        # 根系深度阈值-用于判断根系深度系数
         'ROOT_DEPTH_THRESHOLD': float(os.getenv('ROOT_DEPTH_THRESHOLD', 0.3)),
         # 最大单次灌溉量
         'MAX_SINGLE_IRRIGATION': float(os.getenv('MAX_SINGLE_IRRIGATION', 30.0)),
@@ -155,8 +155,8 @@ class Config:
 
     # 灌溉服务默认系数配置
     DEFAULT_COEFFICIENTS = {
-        'root_depth': float(os.getenv('DEFAULT_ROOT_DEPTH_COEFF', 1.0)),
-        'growth_stage': float(os.getenv('DEFAULT_GROWTH_STAGE_COEFF', 1.0)),
+        'root_depth': float(os.getenv('DEFAULT_ROOT_DEPTH_COEFF', 1.0)),#当无法从aquacrop获取根系深度时，使用1.0作为中性系数
+        'growth_stage': float(os.getenv('DEFAULT_GROWTH_STAGE_COEFF', 1.0)),#当无法从aquacrop获取生育阶段时，使用1.0作为中性系数
         'irrigation_threshold': float(os.getenv('DEFAULT_IRRIGATION_THRESHOLD_COEFF', 0.6))
     }
 
@@ -205,7 +205,7 @@ class Config:
         'fc': float(os.getenv('DEFAULT_SOIL_FC', 25.0)),
         'sat': float(os.getenv('DEFAULT_SOIL_SAT', 35.5)),
         'pwp': float(os.getenv('DEFAULT_SOIL_PWP', 15.2)),
-        'depth_cm': float(os.getenv('DEFAULT_SOIL_DEPTH_CM', 30.0))
+        'depth_cm': float(os.getenv('DEFAULT_SOIL_DEPTH_CM', 30.0)) #用于土壤湿度计算
     }
     
     # API配置
@@ -244,9 +244,9 @@ class Config:
         'SOIL_KSAT': float(os.getenv('AQUACROP_SOIL_KSAT', 590)),
         'SOIL_PENETRABILITY': float(os.getenv('AQUACROP_SOIL_PENETRABILITY', 100)),
         # 土壤水力特征参数（备用）-优先使用soil_senso计算结果
-        'SOIL_FIELD_CAPACITY': float(os.getenv('AQUACROP_SOIL_FC', 0.287)),
-        'SOIL_WILTING_POINT': float(os.getenv('AQUACROP_SOIL_WP', 0.239)),
-        'SOIL_SATURATION': float(os.getenv('AQUACROP_SOIL_SAT', 0.4058)),
+        'SOIL_FIELD_CAPACITY': float(os.getenv('AQUACROP_SOIL_FC', 0.250)),
+        'SOIL_WILTING_POINT': float(os.getenv('AQUACROP_SOIL_WP', 0.152)),
+        'SOIL_SATURATION': float(os.getenv('AQUACROP_SOIL_SAT', 0.355)),
         # 灌溉管理
         'IRR_FREQUENCY': os.getenv('AQUACROP_IRR_FREQUENCY', '30D'),
         'IRR_DEPTH': float(os.getenv('AQUACROP_IRR_DEPTH', 30)),
@@ -266,8 +266,8 @@ class Config:
         
         # ETo估算方法配置
         'ETO_METHOD': os.getenv('AQUACROP_ETO_METHOD', 'hargreaves_simplified'),  # 'observed'|'hargreaves_simplified'|'hargreaves_fao56'
-        'LATITUDE': float(os.getenv('AQUACROP_LATITUDE', 35.0)),  # 纬度，用于FAO-56计算
-        'ELEVATION': float(os.getenv('AQUACROP_ELEVATION', 100.0)),  # 海拔，用于FAO-56计算
+        'LATITUDE': float(os.getenv('AQUACROP_LATITUDE', 35.3)),  # 河南新乡纬度，用于FAO-56计算
+        'ELEVATION': float(os.getenv('AQUACROP_ELEVATION', 80.0)),  # 河南新乡海拔，用于FAO-56计算
         
         # 生育阶段定义-冠层覆盖度
         'GROWTH_STAGES_CANOPY_COVER': [
