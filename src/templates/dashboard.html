@@ -28,11 +28,12 @@
         margin-bottom: 1rem;
     }
     .bg-soil { background-color: #8B4513; } /* 棕色 */
-    .bg-water { background-color: #1E90FF; } /* 道奇蓝 */
-    .bg-plant { background-color: #2E8B57; } /* 海洋绿 */
-    .bg-cloud { background-color: #87CEEB; } /* 天蓝色 */
-    .bg-history { background-color: #778899; } /* 亮石板灰 */
-    .bg-decision { background-color: #FFA500; } /* 橙色 */
+        .bg-water { background-color: #1E90FF; } /* 道奇蓝 */
+        .bg-plant { background-color: #2E8B57; } /* 海洋绿 */
+        .bg-cloud { background-color: #87CEEB; } /* 天蓝色 */
+        .bg-history { background-color: #778899; } /* 亮石板灰 */
+        .bg-decision { background-color: #FFA500; } /* 橙色 */
+        .bg-chart { background-color: #6A5ACD; } /* 石板蓝 */
 
     .data-value {
         font-size: 1.4rem;
@@ -182,6 +183,34 @@
                 </div>
             </div>
         </div>
+
+        <!-- ETref和ETc趋势图 -->
+        <div class="col-lg-12 mt-4">
+            <div class="card apple-card">
+                <button class="refresh-button" id="refresh-et-data" title="刷新ETref和ETc数据"><i class="fas fa-sync-alt"></i></button>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="card-icon bg-chart me-3"><i class="fas fa-chart-line"></i></div>
+                        <h5 class="card-title mb-0">作物蒸散量趋势</h5>
+                    </div>
+                    <div class="chart-container">
+                        <div id="et-chart-loading" class="loading-spinner" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <p class="mt-2 text-muted">正在加载ETref和ETc数据...</p>
+                        </div>
+                        <div id="et-chart-error" class="alert alert-warning" style="display: none;">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <span id="et-chart-error-message">无法加载ETref和ETc数据</span>
+                        </div>
+                        <div id="et-chart-container">
+                            <canvas id="et-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -194,4 +223,4 @@
 {% block custom_js %}
 {# 确保 dashboard.js 在这里加载，它已在 base.html 中加载，这里无需重复 #}
 {# <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script> #}
-{% endblock %} 
+{% endblock %}

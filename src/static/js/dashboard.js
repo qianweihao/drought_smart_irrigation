@@ -5,6 +5,7 @@
 
 // 全局变量存储 Chart 实例
 let humidityChart = null;
+let etChart = null; // 新增ETref和ETc图表变量
 
 // --- Helper Functions ---
 
@@ -64,6 +65,216 @@ async function fetchData(url, options = {}, buttonElement = null) {
         if (buttonElement) {
             buttonElement.disabled = false;
             buttonElement.classList.remove('loading');
+        }
+    }
+}
+
+/** 更新ETref和ETc趋势图 */
+async function updateETChart(buttonElement = null) {
+    console.log('开始更新ETref和ETc趋势图...');
+    
+    // 显示加载状态
+    const loadingElement = document.getElementById('et-chart-loading');
+    const errorElement = document.getElementById('et-chart-error');
+    const chartContainer = document.getElementById('et-chart-container');
+    
+    if (loadingElement) loadingElement.style.display = 'block';
+    if (errorElement) errorElement.style.display = 'none';
+    if (chartContainer) chartContainer.style.display = 'block';
+    
+    // 设置按钮加载状态
+    if (buttonElement) {
+        buttonElement.disabled = true;
+        const originalText = buttonElement.innerHTML;
+        buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>加载中...';
+        
+        // 恢复按钮状态的函数
+        const restoreButton = () => {
+            buttonElement.disabled = false;
+            buttonElement.innerHTML = originalText;
+        };
+        
+        // 5秒后自动恢复按钮状态
+        setTimeout(restoreButton, 5000);
+    }
+    
+    try {
+        // 获取ETref和ETc数据
+        const response = await fetchData('/api/et_history');
+        console.log('ETref和ETc数据响应:', response);
+        
+        if (loadingElement) loadingElement.style.display = 'none';
+        
+        if (response && response.status === 'success' && response.data) {
+            const data = response.data;
+            
+            // 验证数据有效性
+            if (!data.dates || !data.etref || !data.etc || 
+                data.dates.length === 0 || data.etref.length === 0 || data.etc.length === 0) {
+                throw new Error('ETref和ETc数据为空或格式无效');
+            }
+            
+            // 销毁现有图表
+            if (etChart) {
+                etChart.destroy();
+                etChart = null;
+            }
+            
+            // 获取canvas元素
+            const canvas = document.getElementById('et-chart');
+            if (!canvas) {
+                console.error('找不到ETref和ETc图表canvas元素，ID: et-chart');
+                throw new Error('找不到ETref和ETc图表canvas元素');
+            }
+            
+            console.log('找到canvas元素:', canvas);
+            
+            const ctx = canvas.getContext('2d');
+            console.log('ETref和ETc数据:', {
+                dates: data.dates,
+                etref: data.etref,
+                etc: data.etc,
+                etref_length: data.etref.length,
+                etc_length: data.etc.length,
+                etref_sample: data.etref.slice(0, 5),
+                etc_sample: data.etc.slice(0, 5),
+                etref_types: data.etref.slice(0, 5).map(v => typeof v),
+                etc_types: data.etc.slice(0, 5).map(v => typeof v)
+            });
+            
+            // 确保数据是数字类型
+            const etrefData = data.etref.map(v => parseFloat(v));
+            const etcData = data.etc.map(v => parseFloat(v));
+            
+            console.log('转换后的数据:', {
+                etref_converted: etrefData.slice(0, 5),
+                etc_converted: etcData.slice(0, 5)
+            });
+            
+            // 创建新的图表
+            etChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: [
+                        {
+                            label: 'ETref (参考蒸散量)',
+                            data: etrefData,
+                            borderColor: '#007bff',
+                            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.1,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        },
+                        {
+                            label: 'ETc (作物蒸散量)',
+                            data: etcData,
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.1,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'ETref和ETc趋势图',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + ' mm/day';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '日期'
+                            },
+                            ticks: {
+                                maxTicksLimit: 8,
+                                maxRotation: 45
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '蒸散量 (mm/day)'
+                            },
+                            beginAtZero: false,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(2) + ' mm';
+                                }
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+            
+            console.log(`ETref和ETc图表创建成功，数据点数: ${data.dates.length}`);
+            
+            // 确保图表容器可见
+            if (chartContainer) {
+                chartContainer.style.display = 'block';
+                console.log('ETref和ETc图表容器已显示');
+            }
+            
+        } else {
+            throw new Error(response?.message || '获取ETref和ETc数据失败');
+        }
+        
+    } catch (error) {
+        console.error('更新ETref和ETc图表失败:', error);
+        
+        if (loadingElement) loadingElement.style.display = 'none';
+        if (errorElement) {
+            errorElement.style.display = 'block';
+            const errorMessageElement = document.getElementById('et-chart-error-message');
+            if (errorMessageElement) {
+                errorMessageElement.textContent = error.message || '加载ETref和ETc数据失败';
+            }
+        }
+        
+        // 隐藏图表容器
+        if (chartContainer) chartContainer.style.display = 'none';
+        
+        showToast(`ETref和ETc图表更新失败: ${error.message}`, 'error');
+    } finally {
+        // 恢复按钮状态
+        if (buttonElement) {
+            buttonElement.disabled = false;
+            const originalText = buttonElement.getAttribute('data-original-text') || '刷新';
+            buttonElement.innerHTML = originalText;
         }
     }
 }
@@ -425,7 +636,13 @@ async function updateHistoryChart(buttonElement = null) {
                 }
             };
 
-            const ctx = document.getElementById(canvasId).getContext('2d');
+            const canvasElement = document.getElementById(canvasId);
+            if (!canvasElement) {
+                console.error(`找不到canvas元素，ID: ${canvasId}`);
+                throw new Error(`找不到画布元素: ${canvasId}`);
+            }
+            
+            const ctx = canvasElement.getContext('2d');
 
             try {
                 // 确保画布元素存在
@@ -467,19 +684,33 @@ async function updateHistoryChart(buttonElement = null) {
             // 如果没有数据，隐藏图表并显示提示
             console.warn('无有效的土壤湿度历史数据');
             hideLoading(null, loadingElementId, placeholderElementId);
-            document.getElementById(canvasId).style.display = 'none';
+            
+            const canvasElement = document.getElementById(canvasId);
+            if (canvasElement) {
+                canvasElement.style.display = 'none';
+            }
+            
             const placeholder = document.getElementById(placeholderElementId);
-            placeholder.textContent = '无可用历史数据。请检查土壤湿度传感器连接是否正常。';
-            placeholder.classList.remove('d-none');
+            if (placeholder) {
+                placeholder.textContent = '无可用历史数据。请检查土壤湿度传感器连接是否正常。';
+                placeholder.classList.remove('d-none');
+            }
         }
     } catch (error) {
         // 发生错误时，隐藏图表并显示错误提示
         console.error('获取历史湿度数据时出错:', error);
         hideLoading(null, loadingElementId, placeholderElementId);
-        document.getElementById(canvasId).style.display = 'none';
+        
+        const canvasElement = document.getElementById(canvasId);
+        if (canvasElement) {
+            canvasElement.style.display = 'none';
+        }
+        
         const placeholder = document.getElementById(placeholderElementId);
-        placeholder.textContent = `加载图表数据失败: ${error.message}`;
-        placeholder.classList.remove('d-none');
+        if (placeholder) {
+            placeholder.textContent = `加载图表数据失败: ${error.message}`;
+            placeholder.classList.remove('d-none');
+        }
     }
 }
 
@@ -550,21 +781,59 @@ function hideLoading(contentElementId, loadingElementId, placeholderElementId) {
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     console.log('仪表盘页面加载完成，开始初始化...');
+    
+    // 详细检查DOM元素状态
+    console.log('=== DOM元素检查 ===');
+    const etChart = document.getElementById('et-chart');
+    const humidityChart = document.getElementById('humidity-chart');
+    const etChartContainer = document.getElementById('et-chart-container');
+    const etChartLoading = document.getElementById('et-chart-loading');
+    const etChartError = document.getElementById('et-chart-error');
+    
+    console.log('et-chart元素:', etChart);
+    console.log('et-chart是否存在:', !!etChart);
+    console.log('et-chart容器:', etChartContainer);
+    console.log('et-chart加载元素:', etChartLoading);
+    console.log('et-chart错误元素:', etChartError);
+    
+    console.log('humidity-chart元素:', humidityChart);
+    console.log('humidity-chart是否存在:', !!humidityChart);
+    
+    if (etChart) {
+        console.log('et-chart样式:', {
+            display: etChart.style.display,
+            visibility: etChart.style.visibility,
+            offsetWidth: etChart.offsetWidth,
+            offsetHeight: etChart.offsetHeight
+        });
+    }
+    
+    if (humidityChart) {
+        console.log('humidity-chart样式:', {
+            display: humidityChart.style.display,
+            visibility: humidityChart.style.visibility,
+            offsetWidth: humidityChart.offsetWidth,
+            offsetHeight: humidityChart.offsetHeight
+        });
+    }
+    console.log('=== DOM元素检查结束 ===');
 
     // 初始加载所有卡片数据
     updateSoilCard();
     updateDecisionCard();
     updateGrowthCard();
     updateHistoryChart();
+    updateETChart();
 
     // 绑定刷新按钮事件
     document.getElementById('refresh-soil-data')?.addEventListener('click', (e) => updateSoilCard(e.currentTarget));
     document.getElementById('refresh-decision-data')?.addEventListener('click', (e) => updateDecisionCard(e.currentTarget));
     document.getElementById('refresh-growth-data')?.addEventListener('click', (e) => updateGrowthCard(e.currentTarget));
     document.getElementById('refresh-history-data')?.addEventListener('click', (e) => updateHistoryChart(e.currentTarget));
+    document.getElementById('refresh-et-data')?.addEventListener('click', (e) => updateETChart(e.currentTarget));
 
     // 绑定"生成决策"按钮事件
     document.getElementById('make-decision-btn')?.addEventListener('click', (e) => handleMakeDecision(e.currentTarget));
 
     console.log('仪表盘 JS 初始化完成');
-}); 
+});

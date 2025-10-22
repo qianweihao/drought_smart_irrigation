@@ -211,7 +211,11 @@ class Config:
     # API配置
     API_CONFIG = {
         'SOIL_API_URL': os.getenv('SOIL_API_URL', 'https://iland.zoomlion.com/open-sharing-platform/zlapi/'),
-        'SOIL_API_KEY': os.getenv('SOIL_API_KEY', 'dWCkcdbdSeMqHyMQmZruWzwHR30cspVH')
+        'SOIL_API_KEY': os.getenv('SOIL_API_KEY', 'dWCkcdbdSeMqHyMQmZruWzwHR30cspVH'),
+        # API查询参数配置
+        'MAX_DAYS_RANGE': int(os.getenv('API_MAX_DAYS_RANGE', 365)),  # 最大查询天数范围
+        'DEFAULT_DAYS': int(os.getenv('API_DEFAULT_DAYS', 30)),       # 默认查询天数
+        'ET_DATA_MIN_COLUMNS': int(os.getenv('ET_DATA_MIN_COLUMNS', 20))  # ET数据文件最小列数要求
     }
 
     # 墒情传感器数据查询范围
@@ -287,6 +291,21 @@ class Config:
             {"阶段": "拔节-抽穗期", "开始DAP": 96, "结束DAP": 175},
             {"阶段": "抽穗-成熟期", "开始DAP": 176, "结束DAP": 230}
         ]
+    }
+    
+    # 灌溉阈值配置
+    AQUACROP_IRRIGATION_CONFIG = {
+        # 灌溉方法选择：1=阈值触发，3=预定义计划
+        'IRRIGATION_METHOD': int(os.getenv('AQUACROP_IRRIGATION_METHOD', 1)),
+        # SMT参数
+        'SMT': [
+            float(os.getenv('SMT_INITIAL', 80)),      # 初期阶段
+            float(os.getenv('SMT_DEVELOPMENT', 85)),  # 发育期
+            float(os.getenv('SMT_MID', 90)),          # 中期阶段
+            float(os.getenv('SMT_LATE', 80))          # 末期阶段
+        ],
+        'MAX_IRRIGATION_DEPTH': float(os.getenv('MAX_IRRIGATION_DEPTH', 25)),  # 最大灌溉深度(mm)
+        'IRRIGATION_EFFICIENCY': float(os.getenv('IRRIGATION_EFFICIENCY', 85))  # 灌溉效率(%)
     }
     
     # FAO数据输入输出配置

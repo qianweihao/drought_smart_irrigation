@@ -75,11 +75,37 @@ def normalize_irr_frequency(freq_val):
 def validate_config(config):
     """校验配置参数的有效性和完整性"""
     logger.info("开始配置校验...")
+    
+    # 合并AquaCrop灌溉配置
+    from config import Config as model_config
+    aquacrop_irr_config = {**config, **model_config.AQUACROP_IRRIGATION_CONFIG}
+    irrigation_method = aquacrop_irr_config.get('IRRIGATION_METHOD', 1)
+    
+    # 基础必需配置
     required_keys = [
         'CROP_NAME', 'PLANTING_DATE', 'SIM_START_TIME', 'SIM_END_TIME',
         'SOIL_TEXTURE', 'SOIL_SATURATION', 'SOIL_FIELD_CAPACITY', 'SOIL_WILTING_POINT',
-        'IRR_FREQUENCY', 'IRR_DEPTH', 'OUTPUT_DIR'
+        'OUTPUT_DIR'
     ]
+    
+    # 根据灌溉方法添加特定的必需配置
+    if irrigation_method == 1:  # 阈值触发灌溉
+        logger.info("校验阈值触发灌溉配置...")
+        # SMT参数校验
+        smt = aquacrop_irr_config.get('SMT')
+        if not smt:
+            logger.warning("未配置SMT参数,使用默认值: [80, 85, 90, 80]")
+            aquacrop_irr_config['SMT'] = [80, 85, 90, 80]
+        elif not isinstance(smt, list) or len(smt) != 4:
+            raise ValueError("SMT参数必须是包含4个值的列表(对应4个生长阶段)")
+        else:
+            for i, val in enumerate(smt):
+                if not (50 <= val <= 100):
+                    raise ValueError(f"SMT参数第{i+1}个值应在50-100之间,当前值: {val}")
+    else:  # 预定义计划灌溉
+        logger.info("校验预定义计划灌溉配置...")
+        required_keys.extend(['IRR_FREQUENCY', 'IRR_DEPTH'])
+    
     missing_keys = [key for key in required_keys if key not in config]
     if missing_keys:
         raise ValueError(f"缺少必需的配置项: {missing_keys}")
@@ -108,7 +134,9 @@ def validate_config(config):
         'SOIL_WILTING_POINT': (0.05, 0.3, "土壤凋萎点应在0.05-0.3之间"),
         'IRR_DEPTH': (5, 100, "灌溉深度应在5-100mm之间"),
         'LATITUDE': (-90, 90, "纬度应在-90到90度之间"),
-        'ELEVATION': (-500, 5000, "海拔应在-500到5000米之间")
+        'ELEVATION': (-500, 5000, "海拔应在-500到5000米之间"),
+        'MAX_IRRIGATION_DEPTH': (5, 100, "最大灌溉深度应在5-100mm之间"),
+        'IRRIGATION_EFFICIENCY': (50, 100, "灌溉效率应在50-100%之间")
     }
     
     for key, (min_val, max_val, message) in numeric_validations.items():
@@ -1198,26 +1226,66 @@ def run_model_and_save_results() -> Dict:
                 penetrability=config['SOIL_PENETRABILITY']
             )
         set_crop = Crop(config['CROP_NAME'], planting_date=config['PLANTING_DATE'])
-        irr_freq = normalize_irr_frequency(config['IRR_FREQUENCY'])
-        irr_dates = pd.date_range(
-            start=config['SIM_START_TIME'],
-            end=config['SIM_END_TIME'],
-            freq=irr_freq
-        )
-        irr_schedule = pd.DataFrame({
-            "Date": irr_dates,
-            "Depth": [config['IRR_DEPTH']] * len(irr_dates)
-        })
-        irr_schedule["Date"] = pd.to_datetime(irr_schedule["Date"]).dt.date
-        try:
-            irr_mngt = IrrigationManagement(irrigation_method=1, Schedule=irr_schedule)
-        except TypeError:
-            logger.warning("IrrigationManagement不支持Schedule参数,使用标准irrigation_method=1")
-            irr_mngt = IrrigationManagement(irrigation_method=1)
-            if hasattr(irr_mngt, 'schedule'):
-                irr_mngt.schedule = irr_schedule
-            elif hasattr(irr_mngt, 'set_schedule'):
-                irr_mngt.set_schedule(irr_schedule)
+        
+        # 合并AquaCrop灌溉配置
+        aquacrop_irr_config = {**config, **model_config.AQUACROP_IRRIGATION_CONFIG}
+        
+        # 根据配置选择灌溉方法
+        irrigation_method = aquacrop_irr_config.get('IRRIGATION_METHOD', 1)
+        
+        if irrigation_method == 1:  # 阈值触发灌溉
+            logger.info("使用阈值触发灌溉模式")
+            try:
+                # 尝试使用SMT参数初始化
+                irr_mngt = IrrigationManagement(
+                    irrigation_method=1,
+                    SMT=aquacrop_irr_config['SMT'],
+                    MaxIrrSeason=aquacrop_irr_config['MAX_IRRIGATION_DEPTH'],
+                    AppEff=aquacrop_irr_config['IRRIGATION_EFFICIENCY'] / 100.0
+                )
+                logger.info(f"成功配置阈值触发灌溉: SMT={aquacrop_irr_config['SMT']}")
+            except Exception as e:
+                logger.warning(f"阈值触发灌溉初始化失败: {e}，回退到预定义计划")
+                # 回退到预定义计划
+                irr_freq = normalize_irr_frequency(config['IRR_FREQUENCY'])
+                irr_dates = pd.date_range(
+                    start=config['SIM_START_TIME'],
+                    end=config['SIM_END_TIME'],
+                    freq=irr_freq
+                )
+                irr_schedule = pd.DataFrame({
+                    "Date": irr_dates,
+                    "Depth": [config['IRR_DEPTH']] * len(irr_dates)
+                })
+                irr_schedule["Date"] = pd.to_datetime(irr_schedule["Date"]).dt.date
+                try:
+                    irr_mngt = IrrigationManagement(irrigation_method=3, Schedule=irr_schedule)
+                except TypeError:
+                    irr_mngt = IrrigationManagement(irrigation_method=3)
+                    if hasattr(irr_mngt, 'schedule'):
+                        irr_mngt.schedule = irr_schedule
+        else:  # 预定义计划灌溉
+            logger.info("使用预定义计划灌溉模式")
+            irr_freq = normalize_irr_frequency(config['IRR_FREQUENCY'])
+            irr_dates = pd.date_range(
+                start=config['SIM_START_TIME'],
+                end=config['SIM_END_TIME'],
+                freq=irr_freq
+            )
+            irr_schedule = pd.DataFrame({
+                "Date": irr_dates,
+                "Depth": [config['IRR_DEPTH']] * len(irr_dates)
+            })
+            irr_schedule["Date"] = pd.to_datetime(irr_schedule["Date"]).dt.date
+            try:
+                irr_mngt = IrrigationManagement(irrigation_method=3, Schedule=irr_schedule)
+            except TypeError:
+                logger.warning("IrrigationManagement不支持Schedule参数,使用标准irrigation_method=3")
+                irr_mngt = IrrigationManagement(irrigation_method=3)
+                if hasattr(irr_mngt, 'schedule'):
+                    irr_mngt.schedule = irr_schedule
+                elif hasattr(irr_mngt, 'set_schedule'):
+                    irr_mngt.set_schedule(irr_schedule)
     
         model = AquaCropModel(
             sim_start_time=config['SIM_START_TIME'],
