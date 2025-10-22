@@ -930,3 +930,4 @@ jinja2.exceptions.UndefinedError: 'soil_data' is undefined
 2025-10-22 11:42:19,431 WARNING: 404错误: /.well-known/appspecific/com.chrome.devtools.json [in f:\drought_smart_irrigation\src\app.py:108]
 2025-10-22 11:42:19,436 WARNING: 无法渲染404.html模板: 404.html [in f:\drought_smart_irrigation\src\app.py:115]
 2025-10-22 11:47:41,958 INFO: 应用启动完成 [in f:\drought_smart_irrigation\src\app.py:103]
+2025-10-22 11:48:51,800 INFO: 应用启动完成 [in f:\drought_smart_irrigation\src\app.py:103]
