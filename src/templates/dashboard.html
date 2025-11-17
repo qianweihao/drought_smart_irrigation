@@ -95,7 +95,15 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h1 class="mb-4 display-6">作物智能灌溉仪表盘</h1>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="display-6 mb-0">作物智能灌溉仪表盘</h1>
+        <div class="field-selector">
+            <label for="fieldSelect" class="form-label me-2 mb-0">选择田块：</label>
+            <select id="fieldSelect" class="form-select" style="width: auto; display: inline-block;">
+                <option value="">加载中...</option>
+            </select>
+        </div>
+    </div>
 
     <div class="row g-4">
         <!-- 土壤墒情 -->

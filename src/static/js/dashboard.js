@@ -7,6 +7,10 @@
 let humidityChart = null;
 let etChart = null; // 新增ETref和ETc图表变量
 
+// 全局变量：当前选中的田块ID
+let currentFieldId = null;
+let currentFieldName = '默认田块';
+
 // --- Helper Functions ---
 
 /**
@@ -100,7 +104,9 @@ async function updateETChart(buttonElement = null) {
     
     try {
         // 获取ETref和ETc数据
-        const response = await fetchData('/api/et_history');
+        const baseUrl = '/api/et_history';
+        const url = currentFieldId ? `${baseUrl}?field_id=${currentFieldId}` : baseUrl;
+        const response = await fetchData(url);
         console.log('ETref和ETc数据响应:', response);
         
         if (loadingElement) loadingElement.style.display = 'none';
@@ -352,7 +358,8 @@ async function updateSoilCard(buttonElement = null) {
     try {
         showLoading(contentElementId, loadingElementId, placeholderElementId);
         console.log('正在获取土壤墒情数据...');
-        const data = await fetchData('/api/soil_data', {}, buttonElement);
+        const url = currentFieldId ? `/api/soil_data?field_id=${currentFieldId}` : '/api/soil_data';
+        const data = await fetchData(url, {}, buttonElement);
 
         // 详细记录API响应
         console.log('土壤墒情API响应数据:', data);
@@ -442,7 +449,8 @@ async function updateDecisionCard(buttonElement = null) {
 
     try {
         showLoading(contentElementId, loadingElementId, placeholderElementId);
-        const data = await fetchData('/api/irrigation_recommendation', {}, buttonElement);
+        const url = currentFieldId ? `/api/irrigation_recommendation?field_id=${currentFieldId}` : '/api/irrigation_recommendation';
+        const data = await fetchData(url, {}, buttonElement);
         
         // API可能直接返回数据或者嵌套在data属性中
         const decision = data.data || data;
@@ -486,7 +494,8 @@ async function updateGrowthCard(buttonElement = null) {
 
     try {
         showLoading(contentElementId, loadingElementId, placeholderElementId);
-        const data = await fetchData('/api/growth_stage', {}, buttonElement);
+        const url = currentFieldId ? `/api/growth_stage?field_id=${currentFieldId}` : '/api/growth_stage';
+        const data = await fetchData(url, {}, buttonElement);
         
         // API可能直接返回数据或者嵌套在data属性中
         const growth = data.data || data;
@@ -538,7 +547,9 @@ async function updateHistoryChart(buttonElement = null) {
         // 可选：显示调试提示
         console.log('正在获取历史土壤湿度数据...');
         
-        const data = await fetchData('/api/soil_humidity_history?days=30', {}, buttonElement);
+        const baseUrl = '/api/soil_humidity_history?days=30';
+        const url = currentFieldId ? `${baseUrl}&field_id=${currentFieldId}` : baseUrl;
+        const data = await fetchData(url, {}, buttonElement);
         
         console.log('历史湿度数据响应:', data); // 添加日志以便调试
         
@@ -723,7 +734,8 @@ async function handleMakeDecision(buttonElement) {
 
     try {
         // 调用make_decision API生成灌溉决策
-        const result = await fetchData('/make_decision', { method: 'POST' }, buttonElement);
+        const url = currentFieldId ? `/make_decision?field_id=${currentFieldId}` : '/make_decision';
+        const result = await fetchData(url, { method: 'POST' }, buttonElement);
         console.log('生成灌溉决策响应:', result);
 
         if (result && result.status === 'success') {
@@ -748,6 +760,94 @@ async function handleMakeDecision(buttonElement) {
         statusElement.classList.remove('text-info');
         statusElement.classList.add('text-danger');
         showToast(`决策生成出错: ${error.message}`, 'error');
+    }
+}
+
+// --- 田块管理函数 ---
+/**
+ * 加载田块列表
+ */
+async function loadFields() {
+    console.log('开始加载田块列表...');
+    try {
+        const result = await fetchData('/api/fields');
+        console.log('田块列表响应:', result);
+        
+        if (result && result.status === 'success' && result.data) {
+            const fieldSelect = document.getElementById('fieldSelect');
+            if (!fieldSelect) {
+                console.error('找不到田块选择下拉框元素');
+                return;
+            }
+            
+            // 清空选项
+            fieldSelect.innerHTML = '';
+            
+            // 添加田块选项
+            result.data.forEach((field, index) => {
+                const option = document.createElement('option');
+                option.value = field.field_id;
+                option.textContent = `${field.field_name} (${field.crop_type}, ${field.area}亩)`;
+                option.dataset.fieldName = field.field_name;
+                fieldSelect.appendChild(option);
+                
+                // 默认选中第一个田块
+                if (index === 0) {
+                    currentFieldId = field.field_id;
+                    currentFieldName = field.field_name;
+                    option.selected = true;
+                }
+            });
+            
+            // 监听田块切换事件
+            fieldSelect.addEventListener('change', onFieldChange);
+            
+            console.log(`田块列表加载完成，当前田块: ${currentFieldName} (ID: ${currentFieldId})`);
+            showToast(`已加载 ${result.data.length} 个田块`, 'success');
+        } else {
+            console.error('田块列表数据格式错误或为空');
+            showToast('加载田块列表失败', 'error');
+        }
+    } catch (error) {
+        console.error('加载田块列表出错:', error);
+        showToast(`加载田块列表出错: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * 田块切换事件处理
+ */
+async function onFieldChange(event) {
+    const fieldSelect = event.target;
+    const selectedOption = fieldSelect.options[fieldSelect.selectedIndex];
+    
+    currentFieldId = fieldSelect.value;
+    currentFieldName = selectedOption.dataset.fieldName || '未知田块';
+    
+    console.log(`切换到田块: ${currentFieldName} (ID: ${currentFieldId})`);
+    showToast(`已切换到 ${currentFieldName}`, 'info');
+    
+    // 重新加载所有数据
+    await refreshAllData();
+}
+
+/**
+ * 刷新所有数据
+ */
+async function refreshAllData() {
+    console.log('刷新所有数据...');
+    try {
+        await Promise.all([
+            updateSoilCard(),
+            updateDecisionCard(),
+            updateGrowthCard(),
+            updateHistoryChart(),
+            updateETChart()
+        ]);
+        showToast('数据刷新完成', 'success');
+    } catch (error) {
+        console.error('刷新数据出错:', error);
+        showToast(`刷新数据出错: ${error.message}`, 'error');
     }
 }
 
@@ -818,11 +918,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     console.log('=== DOM元素检查结束 ===');
 
-    // 初始加载所有卡片数据
-    updateSoilCard();
-    updateDecisionCard();
-    updateGrowthCard();
-    updateHistoryChart();
+    // 先加载田块列表，然后加载数据
+    loadFields().then(() => {
+        // 初始加载所有卡片数据
+        updateSoilCard();
+        updateDecisionCard();
+        updateGrowthCard();
+        updateHistoryChart();
+    });
     updateETChart();
 
     // 绑定刷新按钮事件

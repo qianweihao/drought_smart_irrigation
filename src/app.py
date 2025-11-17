@@ -22,6 +22,11 @@ try:
     sys.path.insert(0, os.path.dirname(project_root))
     from config import Config
     logger.info("成功从项目根目录导入配置")
+    # 验证田块配置
+    try:
+        Config.validate_fields_config()
+    except Exception as e:
+        logger.warning(f"田块配置验证失败: {e}")
 except ImportError as e:
     logger.error(f"无法从项目根目录导入配置: {e}")
     logger.error(traceback.format_exc())

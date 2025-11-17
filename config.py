@@ -92,17 +92,17 @@ class Config:
         'Kcbmid': float(os.getenv('KCBMID', 1.10)),#盛长期基础作物系数
         'Kcbend': float(os.getenv('KCBEND', 0.20)),#末期基础作物系数
         'Lini': int(os.getenv('LINI', 20)), #初始期天数
-        'Ldev': int(os.getenv('LDEV', 50)), #速生期天数
+        'Ldev': int(os.getenv('LDEV', 90)), #速生期天数
         'Lmid': int(os.getenv('LMID', 70)), #盛长期天数
-        'Lend': int(os.getenv('LEND', 30)), #末期天数
+        'Lend': int(os.getenv('LEND', 32)), #末期天数
         'hmax': float(os.getenv('HMAX', 1)) #株高
     }
 
     # 土壤参数-ETc-FAO
     SOIL_PARAMS = {
-        'thetaFC': float(os.getenv('THETA_FC', 0.327)),
-        'thetaWP': float(os.getenv('THETA_WP', 0.10)),
-        'theta0': float(os.getenv('THETA_0', 0.327)),
+        'thetaFC': float(os.getenv('THETA_FC', 0.250)),
+        'thetaWP': float(os.getenv('THETA_WP', 0.152)),
+        'theta0': float(os.getenv('THETA_0', 0.355)),
         'Zrini': float(os.getenv('ZR_INI', 0.20)),#取0.2-0.3m
         'Zrmax': float(os.getenv('ZR_MAX', 1.5)),#按中等情况设定，冬小麦通常 1.2–1.5m；深厚壤土、无障碍的土壤可取 1.8–2.0m；若有硬结层/浅土，保守用 0.8–1.0m
         'pbase': float(os.getenv('P_BASE', 0.55)),#无胁迫亏缺比例的基值，冬小麦基准值0.55
@@ -133,6 +133,276 @@ class Config:
         # 最小预测数据天数
         'MIN_FORECAST_DATA_DAYS': int(os.getenv('MIN_FORECAST_DATA_DAYS', 3))
     }
+    
+    # 多田块-设备配置（支持多个田块和设备的管理）
+    # 注意：每个田块的 field_id 应该是唯一的，如果多个田块使用相同的 field_id，
+    # get_device_id_by_field 函数会返回第一个匹配的田块配置
+    # 
+    # 土壤参数配置说明：
+    # 1. 使用手动配置的参数：
+    #    - 设置 use_manual_soil_params=True
+    #    - 在 soil_params 中提供 sat, fc, pwp 的值（单位：%）
+    #    - 此时会忽略 sat_pwp_period 和 fc_period 的配置
+    # 2. 使用统计方法（历史数据计算）：
+    #    - 设置 use_manual_soil_params=False 或不设置此字段
+    #    - 配置 sat_pwp_period 和 fc_period 指定历史数据查询时间段
+    #    - 系统会根据历史数据统计计算 SAT、FC、PWP
+    FIELDS_CONFIG = [
+        {
+            'field_id': '1810564865283239936',
+            'device_id': '61725612366342',
+            'field_name': 'F1',
+            'crop_type': '小麦（百农1316）',
+            'area': 12,  # 面积（亩）
+            'description': '大户试验地（对照）',
+            # 是否使用手动配置的土壤参数（True=手动配置，False或不设置=统计方法）
+            'use_manual_soil_params': True,  # 设置为 True 时使用下面的 soil_params，False 时使用统计方法
+            # 手动配置的土壤参数（仅在 use_manual_soil_params=True 时生效）
+            'soil_params': {
+                 'sat': 35.5,  # 饱和含水量（%）
+                 'fc': 25.0,   # 田间持水量（%）
+                 'pwp': 15.2   # 萎蔫点（%）
+            },
+            # SAT/PWP 历史数据查询时间段（用于统计SAT/PWP，仅在 use_manual_soil_params=False 时生效）
+            'sat_pwp_period': {
+                'start_date': '2025-08-01',  # 开始日期
+                'end_date': None,  # None表示到当前日期
+            },
+            # FC 历史数据查询时间段（用于统计FC，仅在 use_manual_soil_params=False 时生效）
+            'fc_period': {
+                'start_date': '2025-11-16',
+                'end_date': '2025-11-17',
+            }
+        },
+        {
+            'field_id': '1810565402921709568', 
+            'device_id': '61725612366235',
+            'field_name': 'F2',
+            'crop_type': '小麦（百农1316）',
+            'area': 12,
+            'description': '大户试验地（决策组）',
+            'use_manual_soil_params': True,  
+            'soil_params': {
+                'sat': 35.5,
+                'fc': 25.0,
+                'pwp': 15.2
+            },
+            'sat_pwp_period': {
+                'start_date': '2025-08-01',
+                'end_date': None,
+            },
+            'fc_period': {
+                'start_date': '2025-11-16',
+                'end_date': '2025-11-17',
+            }
+        },
+        {
+            'field_id': '1810565648737284096', 
+            'device_id': '61725612366292',
+            'field_name': 'F3',
+            'crop_type': '小麦（百农1316）',
+            'area': 12,
+            'description': '大户试验地（决策组）',
+            'use_manual_soil_params': True, 
+            'soil_params': {
+                'sat': 35.5,
+                'fc': 25.0,
+                'pwp': 15.2
+            },
+            'sat_pwp_period': {
+                'start_date': '2025-08-01',
+                'end_date': None,
+            },
+            'fc_period': {
+                'start_date': '2025-11-16',
+                'end_date': '2025-11-17',
+            }
+        },
+        {
+            'field_id': '1988864752989945856', 
+            'device_id': '61725612366375',
+            'field_name': 'F4',
+            'crop_type': '小麦（百农1316）',
+            'area': 12,
+            'description': '大户试验地（决策组）',
+            'use_manual_soil_params': True,  
+            'soil_params': {
+                'sat': 35.5,
+                'fc': 25.0,
+                'pwp': 15.2
+            },
+            'sat_pwp_period': {
+                'start_date': '2025-08-01',
+                'end_date': None,
+            },
+            'fc_period': {
+                'start_date': '2025-11-16',
+                'end_date': '2025-11-17',
+            }
+        },
+        {
+            'field_id': '1988865235397820416', 
+            'device_id': '61725612366383',
+            'field_name': 'F5',
+            'crop_type': '小麦（百农1316）',
+            'area': 12,
+            'description': '大户试验地（决策组）',
+            'use_manual_soil_params': True,  
+            'soil_params': {
+                'sat': 35.5,
+                'fc': 25.0,
+                'pwp': 15.2
+            },
+            'sat_pwp_period': {
+                'start_date': '2025-08-01',
+                'end_date': None,
+            },
+            'fc_period': {
+                'start_date': '2025-11-16',
+                'end_date': '2025-11-17',
+            }
+        },
+        #...
+    ]
+    
+    @classmethod
+    def validate_fields_config(cls):
+        """验证 FIELDS_CONFIG 配置的有效性
+        
+        检查：
+        - 是否有重复的 field_id
+        - 是否有缺失的必需字段
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if not cls.FIELDS_CONFIG:
+            logger.warning("FIELDS_CONFIG 为空，将使用默认田块配置")
+            return
+        
+        field_ids = []
+        for i, field in enumerate(cls.FIELDS_CONFIG):
+            field_id = field.get('field_id')
+            device_id = field.get('device_id')
+            field_name = field.get('field_name', f'田块{i+1}')
+            
+            # 检查必需字段
+            if not field_id:
+                logger.error(f"FIELDS_CONFIG[{i}] 缺少 field_id")
+            if not device_id:
+                logger.warning(f"FIELDS_CONFIG[{i}] ({field_name}) 缺少 device_id")
+            
+            # 检查重复的 field_id
+            if field_id in field_ids:
+                logger.warning(f"⚠️ 发现重复的 field_id: {field_id} (田块: {field_name})")
+                logger.warning(f"   get_device_id_by_field 将返回第一个匹配的配置")
+            else:
+                field_ids.append(field_id)
+        
+        logger.info(f"FIELDS_CONFIG 验证完成，共 {len(cls.FIELDS_CONFIG)} 个田块配置")
+    
+    @classmethod
+    def get_field_config(cls, field_id):
+        """根据田块ID获取田块配置"""
+        for field in cls.FIELDS_CONFIG:
+            if field.get('field_id') == field_id:
+                return field
+        return None
+    
+    @classmethod
+    def get_field_data_periods(cls, field_id):
+        """获取田块的历史数据查询时间段配置
+        
+        返回:
+            dict: {
+                'sat_pwp': {'start_date': str, 'end_date': str or None},
+                'fc': {'start_date': str, 'end_date': str}
+            }
+        """
+        field_config = cls.get_field_config(field_id)
+        
+        if field_config:
+            # 使用田块特定的时间段配置
+            sat_pwp_period = field_config.get('sat_pwp_period', {})
+            fc_period = field_config.get('fc_period', {})
+            
+            return {
+                'sat_pwp': {
+                    'start_date': sat_pwp_period.get('start_date'),
+                    'end_date': sat_pwp_period.get('end_date')  # None表示到当前日期
+                },
+                'fc': {
+                    'start_date': fc_period.get('start_date'),
+                    'end_date': fc_period.get('end_date')
+                }
+            }
+        else:
+            # 使用全局默认配置
+            query_ranges = cls.DATA_QUERY_RANGES
+            return {
+                'sat_pwp': {
+                    'start_date': f"{query_ranges['MOISTURE_DATA_START_YEAR']}-{query_ranges['MOISTURE_DATA_START_MONTH']:02d}-{query_ranges['MOISTURE_DATA_START_DAY']:02d}",
+                    'end_date': None
+                },
+                'fc': {
+                    'start_date': f"{query_ranges['FC_DATA_START_YEAR']}-{query_ranges['FC_DATA_START_MONTH']:02d}-{query_ranges['FC_DATA_START_DAY']:02d}",
+                    'end_date': f"{query_ranges['FC_DATA_END_YEAR']}-{query_ranges['FC_DATA_END_MONTH']:02d}-{query_ranges['FC_DATA_END_DAY']:02d}"
+                }
+            }
+    
+    @classmethod
+    def get_field_soil_params(cls, field_id):
+        """获取田块的手动配置的土壤参数
+        
+        如果田块配置了 use_manual_soil_params=True 且提供了 soil_params，
+        则返回手动配置的参数；否则返回 None，表示使用统计方法计算
+        
+        返回:
+            dict or None: {
+                'sat': float,  # 饱和含水量（%）
+                'fc': float,   # 田间持水量（%）
+                'pwp': float   # 萎蔫点（%）
+            } 或 None
+        """
+        field_config = cls.get_field_config(field_id)
+        
+        if not field_config:
+            return None
+        
+        # 检查是否启用手动配置
+        use_manual = field_config.get('use_manual_soil_params', False)
+        if not use_manual:
+            return None
+        
+        # 获取手动配置的土壤参数
+        soil_params = field_config.get('soil_params', {})
+        if not soil_params:
+            return None
+        
+        # 验证参数是否完整
+        sat = soil_params.get('sat')
+        fc = soil_params.get('fc')
+        pwp = soil_params.get('pwp')
+        
+        if sat is None or fc is None or pwp is None:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"田块 {field_id} 启用了手动土壤参数，但参数不完整，将使用统计方法")
+            return None
+        
+        # 确保参数是数值类型
+        try:
+            return {
+                'sat': float(sat),
+                'fc': float(fc),
+                'pwp': float(pwp)
+            }
+        except (ValueError, TypeError) as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"田块 {field_id} 的土壤参数格式错误: {e}，将使用统计方法")
+            return None
+    
     # 灌溉决策生育阶段系数配置
     GROWTH_STAGE_COEFFICIENTS = {
         "播种-出苗期": 0.6,
@@ -170,16 +440,16 @@ class Config:
     # 墒情传感器默认值配置-soil_sensor
     SOIL_SENSOR_DEFAULTS = {
         # 默认数据配置
-        'DEFAULT_MAX_HUMIDITY': float(os.getenv('DEFAULT_MAX_HUMIDITY', 35.5)),
-        'DEFAULT_MIN_HUMIDITY': float(os.getenv('DEFAULT_MIN_HUMIDITY', 15.2)),
-        'DEFAULT_REAL_HUMIDITY': float(os.getenv('DEFAULT_REAL_HUMIDITY', 25.0)),
-        'DEFAULT_SAT': float(os.getenv('DEFAULT_SAT', 35.5)),
-        'DEFAULT_FC': float(os.getenv('DEFAULT_FC', 25.0)),
-        'DEFAULT_PWP': float(os.getenv('DEFAULT_PWP', 15.2)),
+        'DEFAULT_MAX_HUMIDITY': float(os.getenv('DEFAULT_MAX_HUMIDITY', 35.5)),#次优先使用
+        'DEFAULT_MIN_HUMIDITY': float(os.getenv('DEFAULT_MIN_HUMIDITY', 15.2)),#次优先使用
+        'DEFAULT_REAL_HUMIDITY': float(os.getenv('DEFAULT_REAL_HUMIDITY', 25.0)),#次优先使用
+        'DEFAULT_SAT': float(os.getenv('DEFAULT_SAT', 35.5)),#优先使用
+        'DEFAULT_FC': float(os.getenv('DEFAULT_FC', 25.0)),#优先使用
+        'DEFAULT_PWP': float(os.getenv('DEFAULT_PWP', 15.2)),#优先使用
         'DEFAULT_SOIL_DEPTH': float(os.getenv('DEFAULT_SOIL_DEPTH', 30.0)),
-        'HUMIDITY_10CM_DEFAULT': float(os.getenv('HUMIDITY_10CM_DEFAULT', 15.0)),
-        'HUMIDITY_20CM_DEFAULT': float(os.getenv('HUMIDITY_20CM_DEFAULT', 20.0)),
-        'HUMIDITY_30CM_DEFAULT': float(os.getenv('HUMIDITY_30CM_DEFAULT', 25.0)),
+        'HUMIDITY_10CM_DEFAULT': float(os.getenv('HUMIDITY_10CM_DEFAULT', 15.0)),#完全降级
+        'HUMIDITY_20CM_DEFAULT': float(os.getenv('HUMIDITY_20CM_DEFAULT', 20.0)),#完全降级
+        'HUMIDITY_30CM_DEFAULT': float(os.getenv('HUMIDITY_30CM_DEFAULT', 25.0)),#完全降级
         
         # API配置
         'API_TIMEOUT': int(os.getenv('API_TIMEOUT', 15)),
@@ -218,30 +488,30 @@ class Config:
         'ET_DATA_MIN_COLUMNS': int(os.getenv('ET_DATA_MIN_COLUMNS', 20))  # ET数据文件最小列数要求
     }
 
-    # 墒情传感器数据查询范围
+    # 墒情传感器数据查询范围-默认值兜底
     DATA_QUERY_RANGES = {
         # 传感器极值/SAT/PWP数据查询日期设定
-        'MOISTURE_DATA_START_YEAR': int(os.getenv('MOISTURE_DATA_START_YEAR', 2024)),
-        'MOISTURE_DATA_START_MONTH': int(os.getenv('MOISTURE_DATA_START_MONTH', 7)),
+        'MOISTURE_DATA_START_YEAR': int(os.getenv('MOISTURE_DATA_START_YEAR', 2025)),
+        'MOISTURE_DATA_START_MONTH': int(os.getenv('MOISTURE_DATA_START_MONTH', 8)),
         'MOISTURE_DATA_START_DAY': int(os.getenv('MOISTURE_DATA_START_DAY', 1)),
         # 传感器FC数据查询日期设定
-        'FC_DATA_START_YEAR': int(os.getenv('FC_DATA_START_YEAR', 2024)),
-        'FC_DATA_START_MONTH': int(os.getenv('FC_DATA_START_MONTH', 10)),
-        'FC_DATA_START_DAY': int(os.getenv('FC_DATA_START_DAY', 15)),
-        'FC_DATA_END_YEAR': int(os.getenv('FC_DATA_END_YEAR', 2024)),
-        'FC_DATA_END_MONTH': int(os.getenv('FC_DATA_END_MONTH', 10)),
-        'FC_DATA_END_DAY': int(os.getenv('FC_DATA_END_DAY', 31)),
+        'FC_DATA_START_YEAR': int(os.getenv('FC_DATA_START_YEAR', 2025)),
+        'FC_DATA_START_MONTH': int(os.getenv('FC_DATA_START_MONTH', 11)),
+        'FC_DATA_START_DAY': int(os.getenv('FC_DATA_START_DAY', 16)),
+        'FC_DATA_END_YEAR': int(os.getenv('FC_DATA_END_YEAR', 2025)),
+        'FC_DATA_END_MONTH': int(os.getenv('FC_DATA_END_MONTH', 11)),
+        'FC_DATA_END_DAY': int(os.getenv('FC_DATA_END_DAY', 17)),
     }
     
     # AquaCrop模型模拟配置
     AQUACROP_CONFIG = {
         # 模拟时间范围
-        'SIM_START_TIME': os.getenv('AQUACROP_SIM_START_TIME', '2025/10/1'),
-        'SIM_END_TIME': os.getenv('AQUACROP_SIM_END_TIME', '2026/6/1'),
+        'SIM_START_TIME': os.getenv('AQUACROP_SIM_START_TIME', '2025/11/15'),
+        'SIM_END_TIME': os.getenv('AQUACROP_SIM_END_TIME', '2026/6/15'),
         
         # 作物参数
         'CROP_NAME': os.getenv('AQUACROP_CROP_NAME', 'Wheat'),
-        'PLANTING_DATE': os.getenv('AQUACROP_PLANTING_DATE', '10/15'),
+        'PLANTING_DATE': os.getenv('AQUACROP_PLANTING_DATE', '11/15'),
         
         # 土壤基本物理参数
         'SOIL_TEXTURE':os.getenv('AQUACROP_SOIL_TEXTURE', 'custom'),
@@ -343,10 +613,10 @@ class Config:
         'crop_type': os.getenv('CROP_TYPE', 'wheat'),
         
         # 小麦生长季配置
-        'wheat_season_start_month': int(os.getenv('WHEAT_START_MONTH', 10)),
-        'wheat_season_start_day': int(os.getenv('WHEAT_START_DAY', 1)),
+        'wheat_season_start_month': int(os.getenv('WHEAT_START_MONTH', 11)),
+        'wheat_season_start_day': int(os.getenv('WHEAT_START_DAY', 15)),
         'wheat_season_end_month': int(os.getenv('WHEAT_END_MONTH', 6)),
-        'wheat_season_end_day': int(os.getenv('WHEAT_END_DAY', 1)),
+        'wheat_season_end_day': int(os.getenv('WHEAT_END_DAY', 15)),
         
         # 玉米生长季配置
         'corn_season_start_month': int(os.getenv('CORN_START_MONTH', 7)),

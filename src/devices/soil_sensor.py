@@ -303,16 +303,34 @@ class DataProcessor:
             return None, False
         try:
             df = pd.DataFrame(data)
+            
+            # 如果DataFrame为空，直接返回
+            if df.empty:
+                logger.warning("DataFrame为空")
+                return None, False
+            
+            # 尝试清理时间字段（如果存在）
             if 'msgTimeStr' in df.columns:
                 valid_mask = df['msgTimeStr'].notna() & (df['msgTimeStr'] != '')
-                df = df[valid_mask]
+                df_filtered = df[valid_mask]
+                # 如果过滤后还有数据，使用过滤后的数据；否则使用原始数据
+                if not df_filtered.empty:
+                    df = df_filtered
+                    logger.debug(f"通过msgTimeStr过滤后剩余{len(df)}条记录")
+                else:
+                    logger.warning("msgTimeStr过滤后数据为空，使用原始数据")
+            
+            # 再次检查是否为空
             if df.empty:
                 logger.warning("数据清洗后为空")
                 return None, False
+            
             logger.info(f"数据处理成功，共{len(df)}条记录")
             return df, True
         except Exception as e:
             logger.error(f"数据处理失败: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return None, False
 
 # ==================== 4. fetch_daily_avg_df（统一拉取入口） ====================
@@ -373,19 +391,35 @@ def save_real_humidity_data(field_id):
 
 # ==================== 6. SAT/PWP和FC数据获取函数 ====================
 
-def get_sat_pwp_data(device_id):
-    """获取饱和含水量(SAT)和凋萎点(PWP)数据，"""
+def get_sat_pwp_data(device_id, field_id=None):
+    """获取饱和含水量(SAT)和凋萎点(PWP)数据
+    
+    Args:
+        device_id: 设备ID
+        field_id: 田块ID（可选，用于获取田块特定的历史数据时间段）
+    """
     try:
-        query_ranges = config.DATA_QUERY_RANGES
-        start_date = datetime(
-            query_ranges['MOISTURE_DATA_START_YEAR'],
-            query_ranges['MOISTURE_DATA_START_MONTH'], 
-            query_ranges['MOISTURE_DATA_START_DAY']
-        )
-        end_date = datetime.now()
-        start_day = start_date.strftime('%Y-%m-%d')
-        end_day = end_date.strftime('%Y-%m-%d')
-        logger.info(f"获取饱和含水量(SAT)和凋萎点(PWP)数据: 使用日期范围 {start_day} 到 {end_day}")
+        # 获取田块特定的历史数据时间段配置
+        from config import Config
+        periods = Config.get_field_data_periods(field_id) if field_id else None
+        
+        if periods and periods['sat_pwp']['start_date']:
+            # 使用田块特定的时间段
+            start_day = periods['sat_pwp']['start_date']
+            end_day = periods['sat_pwp']['end_date'] or datetime.now().strftime('%Y-%m-%d')
+            logger.info(f"[田块 {field_id}] 获取SAT/PWP数据: 使用自定义日期范围 {start_day} 到 {end_day}")
+        else:
+            # 使用全局默认配置
+            query_ranges = config.DATA_QUERY_RANGES
+            start_date = datetime(
+                query_ranges['MOISTURE_DATA_START_YEAR'],
+                query_ranges['MOISTURE_DATA_START_MONTH'], 
+                query_ranges['MOISTURE_DATA_START_DAY']
+            )
+            end_date = datetime.now()
+            start_day = start_date.strftime('%Y-%m-%d')
+            end_day = end_date.strftime('%Y-%m-%d')
+            logger.info(f"获取饱和含水量(SAT)和凋萎点(PWP)数据: 使用默认日期范围 {start_day} 到 {end_day}")
         df = fetch_daily_avg_df(device_id, start_day, end_day)
         if df.empty:
             logger.warning("无法获取SAT/PWP历史数据,使用默认值")
@@ -408,25 +442,41 @@ def get_sat_pwp_data(device_id):
         defaults = config.soil_defaults
         return defaults['DEFAULT_SAT'], defaults['DEFAULT_PWP']
 
-def get_field_capacity_data(device_id):
-    """获取田间持水量(FC)数据"""
+def get_field_capacity_data(device_id, field_id=None):
+    """获取田间持水量(FC)数据
+    
+    Args:
+        device_id: 设备ID
+        field_id: 田块ID（可选，用于获取田块特定的历史数据时间段）
+    """
     try:
-        query_ranges = config.DATA_QUERY_RANGES
-        start_date = datetime(
-            query_ranges['FC_DATA_START_YEAR'],
-            query_ranges['FC_DATA_START_MONTH'],
-            query_ranges['FC_DATA_START_DAY']
-        )
-        end_date = datetime(
-            query_ranges['FC_DATA_END_YEAR'],
-            query_ranges['FC_DATA_END_MONTH'],
-            query_ranges['FC_DATA_END_DAY']
-        )
+        # 获取田块特定的历史数据时间段配置
+        from config import Config
+        periods = Config.get_field_data_periods(field_id) if field_id else None
         
-        start_day = start_date.strftime('%Y-%m-%d')
-        end_day = end_date.strftime('%Y-%m-%d')
-        
-        logger.info(f"获取田间持水量(FC)数据: 使用日期范围 {start_day} 到 {end_day}")
+        if periods and periods['fc']['start_date']:
+            # 使用田块特定的时间段
+            start_day = periods['fc']['start_date']
+            end_day = periods['fc']['end_date']
+            logger.info(f"[田块 {field_id}] 获取FC数据: 使用自定义日期范围 {start_day} 到 {end_day}")
+        else:
+            # 使用全局默认配置
+            query_ranges = config.DATA_QUERY_RANGES
+            start_date = datetime(
+                query_ranges['FC_DATA_START_YEAR'],
+                query_ranges['FC_DATA_START_MONTH'],
+                query_ranges['FC_DATA_START_DAY']
+            )
+            end_date = datetime(
+                query_ranges['FC_DATA_END_YEAR'],
+                query_ranges['FC_DATA_END_MONTH'],
+                query_ranges['FC_DATA_END_DAY']
+            )
+            
+            start_day = start_date.strftime('%Y-%m-%d')
+            end_day = end_date.strftime('%Y-%m-%d')
+            
+            logger.info(f"获取田间持水量(FC)数据: 使用默认日期范围 {start_day} 到 {end_day}")
         
         df = fetch_daily_avg_df(device_id, start_day, end_day)
         if df.empty:
@@ -471,11 +521,35 @@ def get_soil_parameters(device_id, field_id):
         }
     
     try:
-        sat, pwp = get_sat_pwp_data(device_id)
-        fc = get_field_capacity_data(device_id)
-        real_humidity, is_real_data = save_real_humidity_data(field_id)
+        # 优先检查是否有手动配置的土壤参数
+        from config import Config
+        manual_params = Config.get_field_soil_params(field_id)
+        
+        if manual_params:
+            # 使用手动配置的参数
+            logger.info(f"[田块 {field_id}] 使用手动配置的土壤参数: SAT={manual_params['sat']}%, FC={manual_params['fc']}%, PWP={manual_params['pwp']}%")
+            sat = manual_params['sat']
+            fc = manual_params['fc']
+            pwp = manual_params['pwp']
+        else:
+            # 使用统计方法获取SAT/PWP和FC
+            sat, pwp = get_sat_pwp_data(device_id, field_id)
+            fc = get_field_capacity_data(device_id, field_id)
+            logger.info(f"[田块 {field_id}] 使用统计方法获取的土壤参数: SAT={sat}%, FC={fc}%, PWP={pwp}%")
+        
+        real_humidity, real_humidity_is_real = save_real_humidity_data(field_id)
         start_day, end_day = DataProcessor.get_date_range()
         df = fetch_daily_avg_df(device_id, start_day, end_day)
+        
+        # 判断数据是否真实：如果SAT、FC、PWP或实时湿度中至少有一个是真实获取的，就认为数据可用
+        # 检查SAT、FC、PWP是否为默认值（如果是默认值，说明获取失败）
+        defaults = config.soil_defaults
+        sat_is_real = sat != defaults['DEFAULT_SAT']
+        fc_is_real = fc != defaults['DEFAULT_FC']
+        pwp_is_real = pwp != defaults['DEFAULT_PWP']
+        
+        # 如果至少有一个参数是真实获取的，就认为数据可用
+        is_real_data = real_humidity_is_real or sat_is_real or fc_is_real or pwp_is_real or not df.empty
         
         if df.empty:
             logger.warning("无法获取常规湿度数据,但已获取SAT/PWP/FC数据")

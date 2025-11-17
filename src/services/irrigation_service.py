@@ -62,42 +62,9 @@ class IrrigationService:
             if not hasattr(self.config, config_name):
                 logger.warning(f"配置项 {config_name} 不存在，将使用默认值")
                 
-    def _validate_humidity_inputs(self, max_humidity, real_humidity, min_humidity):
-        """验证湿度输入参数的有效性
-        
-        Args:
-            max_humidity (float): 最大土壤湿度
-            real_humidity (float): 实际土壤湿度  
-            min_humidity (float): 最小土壤湿度
-            
-        Raises:
-            ValueError: 当参数无效时抛出异常
-        """
-        # 检查参数类型
-        for name, value in [('max_humidity', max_humidity), 
-                           ('real_humidity', real_humidity), 
-                           ('min_humidity', min_humidity)]:
-            if not isinstance(value, (int, float)) or value is None:
-                raise ValueError(f"{name} 必须是数值类型，当前值: {value}")
-        
-        # 验证数值范围
-        irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
-        min_range = irrigation_config.get('HUMIDITY_MIN_RANGE', 0.0)
-        max_range = irrigation_config.get('HUMIDITY_MAX_RANGE', 100.0)
-        for name, value in [('max_humidity', max_humidity),
-                           ('real_humidity', real_humidity),
-                           ('min_humidity', min_humidity)]:
-            if not (min_range <= value <= max_range):
-                raise ValueError(f"{name} 必须在{min_range}-{max_range}范围内，当前值: {value}")
-        
-        # 检查逻辑关系 - 允许一定的容错性
-        if min_humidity > max_humidity:
-            logger.warning(f"土壤湿度参数顺序异常: min={min_humidity}, max={max_humidity}")
-            # 自动修正
-            min_humidity, max_humidity = max_humidity, min_humidity
-            logger.info(f"已自动修正为: min={min_humidity}, max={max_humidity}")
-            
-        return max_humidity, real_humidity, min_humidity
+    # 注意：_validate_humidity_inputs 函数已废弃
+    # 新的函数签名不再需要 max_humidity 和 min_humidity 参数
+    # 验证逻辑已直接集成到 calculate_soil_humidity_differences 中
         
     def _safe_get_coefficient(self, func_name, *args, default_value=1.0):
         """安全获取系数的统一方法
@@ -297,33 +264,48 @@ class IrrigationService:
             logger.error(f"获取生育阶段系数时出错: {str(e)}")
             return Config.DEFAULT_COEFFICIENTS['growth_stage']  
         
-    def calculate_soil_humidity_differences(self, max_humidity, real_humidity, min_humidity):
-        """计算土壤湿度指标
+    def calculate_soil_humidity_differences(self, field_id, device_id, real_humidity):
+        """计算土壤湿度指标（从传感器获取SAT/FC/PWP数据）
         
         Args:
-            max_humidity (float): 最大土壤湿度，即饱和含水量(SAT) (%)
+            field_id (str): 田块ID，用于获取田块特定的传感器数据
+            device_id (str): 设备ID，用于获取设备数据
             real_humidity (float): 实际土壤湿度 (%)
-            min_humidity (float): 最小土壤湿度，即萎蔫点(PWP) (%)
             
         Returns:
             tuple: (SAT(mm), FC(mm), PWP(mm), diff_max_real_mm, diff_min_real_mm, diff_com_real_mm)
             - SAT: 饱和含水量(mm)
             - FC: 田间持水量(mm) 
             - PWP: 萎蔫点含水量(mm)
-            - diff_max_real_mm: 饱和含水量与实际湿度差值(mm) [已弃用，仅为兼容性保留]
+            - diff_max_real_mm: 饱和含水量与实际湿度差值(mm)
             - diff_min_real_mm: 实际湿度与萎蔫点差值(mm)
             - diff_com_real_mm: 田间持水量与实际湿度差值(mm)
+        
+        Note:
+            SAT、FC、PWP 值直接从传感器获取（根据field_id的历史数据统计）
+            不再接受 max_humidity 和 min_humidity 参数，避免参数混淆
         """
         try:
-            # 验证输入参数
-            max_humidity, real_humidity, min_humidity = self._validate_humidity_inputs(
-                max_humidity, real_humidity, min_humidity
-            )
+            # 验证实际湿度参数 - 首先检查是否为 None
+            if real_humidity is None:
+                raise ValueError(f"[田块 {field_id}] real_humidity 不能为 None")
             
-            logger.info(f"计算土壤湿度差异:max={max_humidity}%, real={real_humidity}%, min={min_humidity}%")
+            # 检查参数类型
+            if not isinstance(real_humidity, (int, float)):
+                raise ValueError(f"[田块 {field_id}] real_humidity 必须是数值类型，当前值: {real_humidity} (类型: {type(real_humidity).__name__})")
+            
+            # 验证数值范围
+            irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
+            min_range = irrigation_config.get('HUMIDITY_MIN_RANGE', 0.0)
+            max_range = irrigation_config.get('HUMIDITY_MAX_RANGE', 100.0)
+            
+            if not (min_range <= real_humidity <= max_range):
+                logger.warning(f"[田块 {field_id}] 实际湿度 {real_humidity}% 超出有效范围 [{min_range}, {max_range}]")
+                real_humidity = max(min_range, min(real_humidity, max_range))
+            
+            logger.info(f"[田块 {field_id}] 计算土壤湿度差异: real_humidity={real_humidity}%")
             
             # 获取配置参数
-            irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
             soil_depth = irrigation_config.get('SOIL_DEPTH_CM', Config.DEFAULT_SOIL_PARAMS['depth_cm'])
             
             # 安全获取系数
@@ -338,17 +320,29 @@ class IrrigationService:
                 default_value=Config.DEFAULT_COEFFICIENTS['growth_stage']
             )
             
-            # 获取传感器数据
-            device_id = irrigation_config.get('DEFAULT_DEVICE_ID')
-            field_id = irrigation_config.get('DEFAULT_FIELD_ID')
-            
-            # 生成小时粒度时间戳用于缓存控制
+            # 从传感器获取田块特定的SAT/FC/PWP数据（根据田块的历史数据统计得出）
             hour_timestamp = datetime.now().strftime('%Y-%m-%d-%H')
             sensor_data = self._get_cached_sensor_data(device_id, field_id, hour_timestamp)
-            fc_percent = sensor_data.get('fc', Config.DEFAULT_SOIL_PARAMS['fc'])
-            sat_percent = sensor_data.get('sat', Config.DEFAULT_SOIL_PARAMS['sat'])
-            pwp_percent = sensor_data.get('pwp', Config.DEFAULT_SOIL_PARAMS['pwp'])
             
+            # 获取传感器统计的土壤参数（百分比）- 确保不为 None
+            sat_percent = sensor_data.get('sat') or Config.DEFAULT_SOIL_PARAMS['sat']
+            fc_percent = sensor_data.get('fc') or Config.DEFAULT_SOIL_PARAMS['fc']
+            pwp_percent = sensor_data.get('pwp') or Config.DEFAULT_SOIL_PARAMS['pwp']
+            
+            # 确保是数值类型
+            try:
+                sat_percent = float(sat_percent) if sat_percent is not None else Config.DEFAULT_SOIL_PARAMS['sat']
+                fc_percent = float(fc_percent) if fc_percent is not None else Config.DEFAULT_SOIL_PARAMS['fc']
+                pwp_percent = float(pwp_percent) if pwp_percent is not None else Config.DEFAULT_SOIL_PARAMS['pwp']
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[田块 {field_id}] 传感器参数类型转换失败: {e}，使用默认值")
+                sat_percent = Config.DEFAULT_SOIL_PARAMS['sat']
+                fc_percent = Config.DEFAULT_SOIL_PARAMS['fc']
+                pwp_percent = Config.DEFAULT_SOIL_PARAMS['pwp']
+            
+            logger.info(f"[田块 {field_id}] 传感器土壤参数: SAT={sat_percent}%, FC={fc_percent}%, PWP={pwp_percent}%")
+            
+            # 计算转换因子
             conversion_factor = soil_depth / 10 * root_depth_coefficient * growth_stage_coefficient
             
             # 计算土壤参数 (mm)
@@ -356,17 +350,19 @@ class IrrigationService:
             FC = fc_percent * conversion_factor  
             PWP = pwp_percent * conversion_factor
             
-            # 计算湿度差异 (mm) - 统一使用传感器数据作为基准
-            diff_max_real_mm = (sat_percent - real_humidity) * conversion_factor
-            diff_min_real_mm = (real_humidity - pwp_percent) * conversion_factor
-            diff_com_real_mm = (fc_percent - real_humidity) * conversion_factor
+            # 计算湿度差异 (mm)
+            diff_max_real_mm = (sat_percent - real_humidity) * conversion_factor  # 蓄水潜力
+            diff_min_real_mm = (real_humidity - pwp_percent) * conversion_factor  # 有效储水量
+            diff_com_real_mm = (fc_percent - real_humidity) * conversion_factor    # 相对田间持水量的差异
             
-            logger.info(f"土壤湿度计算结果: FC={FC:.2f}, PWP={PWP:.2f}")
-            logger.info(f"应用系数: 根系深度系数={root_depth_coefficient}, 生育阶段系数={growth_stage_coefficient}")
+            logger.info(f"[田块 {field_id}] 土壤湿度计算结果: SAT={SAT:.2f}mm, FC={FC:.2f}mm, PWP={PWP:.2f}mm")
+            logger.info(f"[田块 {field_id}] 湿度差异: diff_min_real={diff_min_real_mm:.2f}mm, diff_com_real={diff_com_real_mm:.2f}mm")
+            logger.info(f"[田块 {field_id}] 应用系数: 根系深度={root_depth_coefficient}, 生育阶段={growth_stage_coefficient}")
+            
             return SAT, FC, PWP, diff_max_real_mm, diff_min_real_mm, diff_com_real_mm
             
         except Exception as e:
-            logger.error(f"计算土壤湿度差异时出错: {str(e)}")
+            logger.error(f"[田块 {field_id}] 计算土壤湿度差异时出错: {str(e)}")
             raise
             
     def _load_and_validate_forecast_data(self, out_file):
@@ -591,43 +587,50 @@ class IrrigationService:
                 
         return irrigation_levels[-1]  # 返回最大档位
             
-    def make_irrigation_decision(self, field_id, max_humidity, min_humidity, real_humidity):
+    def make_irrigation_decision(self, field_id, device_id, real_humidity):
         """生成灌溉决策
         
         Args:
             field_id (str): 地块ID
-            max_humidity (float): 最大土壤湿度(饱和含水量SAT)
-            min_humidity (float): 最小土壤湿度(萎蔫点PWP)
-            real_humidity (float): 实际土壤湿度
+            device_id (str): 设备ID（用于获取田块的传感器数据）
+            real_humidity (float): 实际土壤湿度 (%)
             
         Returns:
             dict: 包含灌溉决策信息的字典
+            
+        Note:
+            SAT、FC、PWP 从传感器自动获取（根据田块历史数据统计），无需传入
         """
         try:
-            # 验证输入参数 - 修复参数顺序并接收返回值
-            max_humidity, real_humidity, min_humidity = self._validate_humidity_inputs(
-                max_humidity, real_humidity, min_humidity
+            logger.info(f"[田块 {field_id}] 开始生成灌溉决策: device_id={device_id}, real_humidity={real_humidity}%")
+            
+            # 计算土壤湿度差异（自动从传感器获取 SAT/FC/PWP）
+            SAT, FC, PWP, _, diff_min_real_mm, diff_com_real_mm = self.calculate_soil_humidity_differences(
+                field_id, device_id, real_humidity
             )
             
-            # 获取传感器数据
+            # 获取传感器数据用于日志
             irrigation_config = getattr(self.config, 'IRRIGATION_CONFIG', {})
-            device_id = irrigation_config.get('DEFAULT_DEVICE_ID')
-            # 生成小时粒度时间戳用于缓存控制
             hour_timestamp = datetime.now().strftime('%Y-%m-%d-%H')
             sensor_data = self._get_cached_sensor_data(device_id, field_id, hour_timestamp)
-            fc_percent = sensor_data.get('fc', Config.DEFAULT_SOIL_PARAMS['fc'])
             
-            # 计算土壤湿度差异
-            SAT, FC, PWP, _, diff_min_real_mm, diff_com_real_mm = self.calculate_soil_humidity_differences(
-                max_humidity, real_humidity, min_humidity
-            )
+            # 确保传感器参数不为 None
+            sat_percent = sensor_data.get('sat') or Config.DEFAULT_SOIL_PARAMS['sat']
+            fc_percent = sensor_data.get('fc') or Config.DEFAULT_SOIL_PARAMS['fc']
+            pwp_percent = sensor_data.get('pwp') or Config.DEFAULT_SOIL_PARAMS['pwp']
             
-            # ✅ 获取传感器百分比，而不是入参
-            sat_percent = sensor_data.get('sat', Config.DEFAULT_SOIL_PARAMS['sat'])
-            pwp_percent = sensor_data.get('pwp', Config.DEFAULT_SOIL_PARAMS['pwp'])
+            # 确保是数值类型
+            try:
+                sat_percent = float(sat_percent) if sat_percent is not None else Config.DEFAULT_SOIL_PARAMS['sat']
+                fc_percent = float(fc_percent) if fc_percent is not None else Config.DEFAULT_SOIL_PARAMS['fc']
+                pwp_percent = float(pwp_percent) if pwp_percent is not None else Config.DEFAULT_SOIL_PARAMS['pwp']
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[田块 {field_id}] 传感器参数类型转换失败: {e}，使用默认值")
+                sat_percent = Config.DEFAULT_SOIL_PARAMS['sat']
+                fc_percent = Config.DEFAULT_SOIL_PARAMS['fc']
+                pwp_percent = Config.DEFAULT_SOIL_PARAMS['pwp']
             
-            logger.info(f"传感器百分比: sat%={sat_percent}, fc%={fc_percent}, pwp%={pwp_percent}, real%={real_humidity}")
-            logger.info(f"入参对比: input_max={max_humidity}, input_min={min_humidity}")
+            logger.info(f"[田块 {field_id}] 传感器百分比: SAT={sat_percent}%, FC={fc_percent}%, PWP={pwp_percent}%, Real={real_humidity}%")
             
             # 运行模型（如果需要）
             self._ensure_model_run()
@@ -652,13 +655,15 @@ class IrrigationService:
             # 计算土壤深度
             soil_depth = irrigation_config.get('SOIL_DEPTH_CM', Config.DEFAULT_SOIL_PARAMS['depth_cm'])
             
-            logger.info(f"储水指标计算详情: 土壤深度={soil_depth}cm, 根系系数={root_depth_coefficient}, 生育阶段系数={growth_stage_coefficient}")
-            logger.info(f"百分比数据: 饱和含水量={sat_percent}%, 田间持水量={fc_percent}%, 凋萎点={pwp_percent}%, 当前湿度={real_humidity}%")
-            logger.info(f"毫米数据: 饱和含水量={SAT:.2f}mm, 田间持水量={FC:.2f}mm, 凋萎点={PWP:.2f}mm")
+            logger.info(f"[田块 {field_id}] 储水指标计算详情: 土壤深度={soil_depth}cm, 根系系数={root_depth_coefficient}, 生育阶段系数={growth_stage_coefficient}")
+            logger.info(f"[田块 {field_id}] 百分比数据: SAT={sat_percent}%, FC={fc_percent}%, PWP={pwp_percent}%, Real={real_humidity}%")
+            logger.info(f"[田块 {field_id}] 毫米数据: SAT={SAT:.2f}mm, FC={FC:.2f}mm, PWP={PWP:.2f}mm")
+            logger.info(f"[田块 {field_id}] 灌溉决策: date={date.strftime('%Y-%m-%d')}, irrigation_value={irrigation_value:.2f}mm")
             
             return {
                 "date": date.strftime('%Y-%m-%d'),
                 "field_id": field_id,
+                "device_id": device_id,
                 "message": f"当前土壤体积含水量为：{real_humidity:.2f} %, {message}",
                 "irrigation_value": round(irrigation_value, 2) if irrigation_value else 0,
                 "soil_data": {
@@ -668,15 +673,13 @@ class IrrigationService:
                     "soil_depth": soil_depth,
                     "storage_potential": round(SAT - PWP, 2),  # 蓄水潜力 = 饱和含水量 - 凋萎点
                     "effective_storage": round(FC - PWP, 2),   # 有效储水量 = 田间持水量 - 凋萎点
-                    "available_storage": round(max(0, min(diff_com_real_mm, FC - PWP)), 2),  # 可利用储水量（夹紧到[0, 有效储水量]）
+                    "available_storage": round(max(0, min(diff_com_real_mm, FC - PWP)), 2),  # 可利用储水量
                     "sat": round(SAT, 2),
                     "fc": round(FC, 2),
                     "pwp": round(PWP, 2),
-                    "sensor_sat_percent": round(sat_percent, 2),
-                    "sensor_fc_percent": round(fc_percent, 2),
-                    "sensor_pwp_percent": round(pwp_percent, 2),
-                    "input_max_humidity": round(max_humidity, 2),
-                    "input_min_humidity": round(min_humidity, 2),
+                    "sat_percent": round(sat_percent, 2),
+                    "fc_percent": round(fc_percent, 2),
+                    "pwp_percent": round(pwp_percent, 2),
                     "is_real_data": True
                 },
                 "meta": {
@@ -714,13 +717,12 @@ if __name__ == "__main__":
         
         # 示例数据 - 可以根据实际情况修改
         field_id = Config.IRRIGATION_CONFIG['DEFAULT_FIELD_ID']
-        max_humidity = 35.5  # 最大土壤湿度
-        min_humidity = 15.2  # 最小土壤湿度
-        real_humidity = 25.8  # 实际土壤湿度
+        device_id = Config.IRRIGATION_CONFIG['DEFAULT_DEVICE_ID']
+        real_humidity = 25.8  # 实际土壤湿度（百分比）
         
-        # 生成灌溉决策
+        # 生成灌溉决策（SAT/FC/PWP 自动从传感器获取）
         result = irrigation_service.make_irrigation_decision(
-            field_id, max_humidity, min_humidity, real_humidity
+            field_id, device_id, real_humidity
         )
         
         # 打印结果

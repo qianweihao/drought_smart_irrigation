@@ -87,7 +87,43 @@ def create_routes(config):
         except Exception as e:
             logger.error(f"实例化服务出错: {e}")
             logger.error(traceback.format_exc())
-            return api  
+            return api
+        
+        # 辅助函数：根据 field_id 获取对应的 device_id
+        def get_device_id_by_field(requested_field_id):
+            """根据田块ID获取对应的设备ID
+            
+            Args:
+                requested_field_id: 请求的田块ID
+                
+            Returns:
+                tuple: (device_id, field_name) - 如果找不到或device_id为None，返回默认值
+            """
+            if not requested_field_id:
+                logger.warning("请求的田块ID为空，使用默认值")
+                return device_id, '默认田块'
+            
+            fields_config = getattr(config, 'FIELDS_CONFIG', [])
+            if not fields_config:
+                logger.warning("FIELDS_CONFIG 为空，使用默认值")
+                return device_id, '默认田块'
+            
+            for field in fields_config:
+                field_id = field.get('field_id')
+                if field_id == requested_field_id:
+                    found_device_id = field.get('device_id')
+                    found_field_name = field.get('field_name', '未知')
+                    
+                    # 确保 device_id 不为 None
+                    if found_device_id is None:
+                        logger.warning(f"田块 {requested_field_id} 的 device_id 为 None，使用默认值")
+                        return device_id, found_field_name
+                    
+                    return found_device_id, found_field_name
+            
+            # 如果没找到，返回默认值
+            logger.warning(f"未找到田块 {requested_field_id} 的配置，使用默认值")
+            return device_id, '默认田块'  
         
         def add_cors_headers(response):
             """向响应添加CORS头,允许前端访问"""
@@ -213,7 +249,12 @@ def create_routes(config):
         def soil_humidity_history():
             """获取土壤湿度历史数据 API"""
             try:
-                soil_sensor = SoilSensor(device_id, field_id)
+                # 支持通过请求参数指定田块
+                request_field_id = request.args.get("field_id", field_id)
+                request_device_id, field_name = get_device_id_by_field(request_field_id)
+                logger.info(f"API请求土壤湿度历史数据: field_id={request_field_id}, device_id={request_device_id}, field_name={field_name}")
+                
+                soil_sensor = SoilSensor(request_device_id, request_field_id)
                 days = request.args.get('days', default=DEFAULT_DAYS, type=int)
                 if days <= 0 or days > MAX_DAYS_RANGE:
                     return create_error_response(
@@ -248,18 +289,46 @@ def create_routes(config):
         def make_decision_api():
             """触发灌溉决策生成任务"""
             try:
-                soil_sensor = SoilSensor(device_id, field_id)
-                logger.info(f"API 触发灌溉决策: field_id={field_id}")
+                # 支持通过请求参数指定田块
+                request_field_id = request.args.get("field_id", field_id)
+                request_device_id, field_name = get_device_id_by_field(request_field_id)
+                
+                logger.info(f"API 触发灌溉决策: field_id={request_field_id}, device_id={request_device_id}, field_name={field_name}")
+                
+                soil_sensor = SoilSensor(request_device_id, request_field_id)
                 sensor_data = soil_sensor.get_current_data()
 
-                if not sensor_data.get('is_real_data', False): # 修改判断条件，检查is_real_data而不是is_mock_data
-                     logger.warning("生成决策失败: 无法获取真实土壤数据")
-                     return create_error_response('无法获取真实土壤数据进行决策', 400)
+                # 检查是否有可用的数据
+                real_humidity = sensor_data.get('real_humidity', 0)
+                # 确保 real_humidity 不为 None
+                if real_humidity is None:
+                    real_humidity = 0
+                real_humidity = float(real_humidity) if real_humidity else 0.0
+                is_real_data = sensor_data.get('is_real_data', False)
+                
+                # 检查是否有可用的数据（至少SAT、FC、PWP中有一个不是默认值）
+                has_valid_data = (sensor_data.get('sat', 0) > 0 or 
+                                 sensor_data.get('fc', 0) > 0 or 
+                                 sensor_data.get('pwp', 0) > 0 or
+                                 real_humidity > 0)
+                
+                if not has_valid_data:
+                    logger.warning(f"[田块 {request_field_id}] 生成决策失败: 所有土壤参数都不可用")
+                    return create_error_response('无法获取有效的土壤数据进行决策', 400)
+                
+                # 验证 real_humidity 参数
+                if real_humidity is None or not isinstance(real_humidity, (int, float)):
+                    logger.error(f"[田块 {request_field_id}] 无效的土壤湿度数据: {real_humidity}")
+                    return create_error_response(f'无效的土壤湿度数据: {real_humidity}', 400)
+                
+                if not is_real_data:
+                    logger.warning(f"[田块 {request_field_id}] 部分数据可能不完整 (is_real_data=False)，但将尝试生成决策")
+                
+                # 生成灌溉决策（SAT/FC/PWP 自动从传感器获取）
                 result = irrigation_service.make_irrigation_decision(
-                    field_id,
-                    sensor_data['max_humidity'],
-                    sensor_data['min_humidity'],
-                    sensor_data['real_humidity']
+                    request_field_id,
+                    request_device_id,
+                    real_humidity
                 )
 
                 if result and isinstance(result, dict):
@@ -316,6 +385,36 @@ def create_routes(config):
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }), 500
         
+        # 田块列表API接口
+        @api.route('/api/fields')
+        @api.route(f'{config.API_PREFIX}/fields')
+        @api_error_handler
+        def get_fields():
+            """获取所有可用田块列表"""
+            try:
+                fields_config = getattr(config, 'FIELDS_CONFIG', [])
+                if not fields_config:
+                    # 如果没有配置多田块，返回默认田块
+                    default_field = {
+                        'field_id': field_id,
+                        'device_id': device_id,
+                        'field_name': '默认田块',
+                        'crop_type': '小麦',
+                        'area': 0,
+                        'description': '默认田块'
+                    }
+                    fields_config = [default_field]
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': fields_config,
+                    'count': len(fields_config),
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }), 200
+            except Exception as e:
+                logger.error(f"获取田块列表失败: {str(e)}")
+                return create_error_response(f'获取田块列表失败: {str(e)}', 500)
+        
         # 真实数据API接口
         @api.route('/api/soil_data')
         @api.route(f'{config.API_PREFIX}/soil_data')
@@ -324,73 +423,106 @@ def create_routes(config):
             """土壤数据端点"""
             try:
                 request_field_id = request.args.get("field_id", field_id)
-                logger.info(f"API请求土壤数据: field_id={request_field_id}")
+                request_device_id, field_name = get_device_id_by_field(request_field_id)
+                logger.info(f"API请求土壤数据: field_id={request_field_id}, device_id={request_device_id}, field_name={field_name}")
                 
-                request_sensor = SoilSensor(device_id, request_field_id)
+                request_sensor = SoilSensor(request_device_id, request_field_id)
                 sensor_data = request_sensor.get_current_data()
                 
-                if sensor_data.get('is_real_data', False):
-                    max_humidity = sensor_data['max_humidity']
-                    min_humidity = sensor_data['min_humidity']
-                    real_humidity = sensor_data['real_humidity']
+                # 即使is_real_data为False，如果SAT、FC、PWP等参数可用，也应该返回数据
+                max_humidity = sensor_data.get('max_humidity', 0) or 0
+                min_humidity = sensor_data.get('min_humidity', 0) or 0
+                real_humidity = sensor_data.get('real_humidity', 0)
+                # 确保 real_humidity 不为 None
+                if real_humidity is None:
+                    real_humidity = 0
+                real_humidity = float(real_humidity) if real_humidity else 0.0
+                is_real_data = sensor_data.get('is_real_data', False)
+                
+                # 检查是否有可用的数据（至少SAT、FC、PWP中有一个不是默认值）
+                has_valid_data = (sensor_data.get('sat', 0) > 0 or 
+                                 sensor_data.get('fc', 0) > 0 or 
+                                 sensor_data.get('pwp', 0) > 0 or
+                                 max_humidity > 0 or min_humidity > 0)
+                
+                if not has_valid_data:
+                    logger.warning("所有土壤参数都不可用")
+                    return create_error_response('无法获取有效的土壤数据', 503)
+                
+                logger.info(f"[田块 {request_field_id}] 使用irrigation_service计算土壤墒情参数: real_humidity={real_humidity}%, is_real_data={is_real_data}")
+                
+                try:
+                    # 直接从传感器数据获取SAT/FC/PWP的原始百分比值（已考虑手动配置）
+                    sat_percent = sensor_data.get('sat') or 0
+                    fc_percent = sensor_data.get('fc') or 0
+                    pwp_percent = sensor_data.get('pwp') or 0
                     
-                    logger.info(f"使用irrigation_service计算土壤墒情参数: max_humidity={max_humidity}, min_humidity={min_humidity}, real_humidity={real_humidity}")
-                    
+                    # 确保是数值类型
                     try:
-                        SAT, FC, PWP, diff_max_real_mm, diff_min_real_mm, diff_com_real_mm = irrigation_service.calculate_soil_humidity_differences(
-                            max_humidity, real_humidity, min_humidity
-                        )
-                        
-                        logger.info(f"irrigation_service计算结果: SAT={SAT}, FC={FC}, PWP={PWP}")
-                        logger.info(f"差异参数: diff_max_real_mm={diff_max_real_mm}, diff_min_real_mm={diff_min_real_mm}, diff_com_real_mm={diff_com_real_mm}")
-                        
-                        current_humidity_mm = real_humidity * SOIL_DEPTH_CM / 10
-                        wilting_point = PWP * SOIL_DEPTH_CM / 10
-                        
-                        response_data = {
-                            'max_humidity': sensor_data['max_humidity'],
-                            'min_humidity': sensor_data['min_humidity'],
-                            'real_humidity': sensor_data['real_humidity'],
-                            'sat': round(SAT * 10 / SOIL_DEPTH_CM, 2),  
-                            'fc': round(FC * 10 / SOIL_DEPTH_CM, 2),    
-                            'pwp': round(PWP * 10 / SOIL_DEPTH_CM, 2),  
-                            'is_real_data': True,
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'unit': '%',
-                            'storage_potential': round(diff_max_real_mm, 2),  # 蓄水潜力
-                            'effective_storage': round(diff_min_real_mm, 2),  # 有效储水量
-                            'available_storage': round(diff_min_real_mm, 2)   # 可用储水量
-                        }
-                        
-                        logger.info(f"返回给前端的墒情数据: sat={response_data['sat']}%, fc={response_data['fc']}%, pwp={response_data['pwp']}%")
-                        
-                        logger.info(f"成功返回使用irrigation_service计算的土壤墒情数据")
-                        return jsonify(response_data)
-                    except Exception as e:
-                        logger.error(f"使用irrigation_service计算土壤墒情参数时出错: {str(e)}")
-                        current_humidity_mm = sensor_data.get('real_humidity', 0) * SOIL_DEPTH_CM / 10
-                        wilting_point = sensor_data.get('pwp', 0) * SOIL_DEPTH_CM / 10
-                        
-                        response_data = {
-                            'max_humidity': sensor_data['max_humidity'],
-                            'min_humidity': sensor_data['min_humidity'],
-                            'real_humidity': sensor_data['real_humidity'],
-                            'sat': sensor_data.get('sat', 0),
-                            'fc': sensor_data.get('fc', 0),
-                            'pwp': sensor_data.get('pwp', 0),
-                            'is_real_data': False,
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'unit': '%',
-                            'storage_potential': (sensor_data.get('sat', 0) - sensor_data.get('real_humidity', 0)) * SOIL_DEPTH_CM / 10,
-                            'effective_storage': max(0, sensor_data.get('real_humidity', 0) - sensor_data.get('fc', 0)) * SOIL_DEPTH_CM / 10,
-                            'available_storage': max(0, current_humidity_mm - wilting_point)
-                        }
-                        
-                        logger.warning(f"由于计算错误,返回原始sensor_data基础数据: {str(e)}")
-                        logger.warning("数据完整性警告: 返回的土壤墒情参数未经过irrigation_service计算验证")
-                        return jsonify(response_data)
-                else:
-                    return create_error_response('无法获取真实土壤数据', 503)
+                        sat_percent = float(sat_percent) if sat_percent is not None else 0
+                        fc_percent = float(fc_percent) if fc_percent is not None else 0
+                        pwp_percent = float(pwp_percent) if pwp_percent is not None else 0
+                    except (ValueError, TypeError):
+                        sat_percent = fc_percent = pwp_percent = 0
+                    
+                    logger.info(f"[田块 {request_field_id}] 传感器原始参数: SAT={sat_percent}%, FC={fc_percent}%, PWP={pwp_percent}%")
+                    
+                    # 使用irrigation_service计算差异参数（用于决策）
+                    SAT, FC, PWP, diff_max_real_mm, diff_min_real_mm, diff_com_real_mm = irrigation_service.calculate_soil_humidity_differences(
+                        request_field_id, request_device_id, real_humidity
+                    )
+                    
+                    logger.info(f"irrigation_service计算结果: SAT={SAT}mm, FC={FC}mm, PWP={PWP}mm")
+                    logger.info(f"差异参数: diff_max_real_mm={diff_max_real_mm}, diff_min_real_mm={diff_min_real_mm}, diff_com_real_mm={diff_com_real_mm}")
+                    
+                    current_humidity_mm = real_humidity * SOIL_DEPTH_CM / 10
+                    wilting_point = pwp_percent * SOIL_DEPTH_CM / 10
+                    
+                    response_data = {
+                        # 核心土壤参数（直接从传感器数据获取，已考虑手动配置）
+                        'real_humidity': round(real_humidity, 2),  # 当前实际湿度
+                        'sat': round(sat_percent, 2),  # 饱和含水量（手动配置或统计方法）
+                        'fc': round(fc_percent, 2),   # 田间持水量（手动配置或统计方法）
+                        'pwp': round(pwp_percent, 2),  # 萎蔫点（手动配置或统计方法）
+                        # 兼容性字段（已废弃，保留仅用于向后兼容）
+                        'max_humidity': sensor_data.get('max_humidity', 0),  # 已废弃：请使用 sat
+                        'min_humidity': sensor_data.get('min_humidity', 0),  # 已废弃：请使用 pwp
+                        # 其他信息
+                        'is_real_data': is_real_data,
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'unit': '%',
+                        'storage_potential': round(diff_max_real_mm, 2),  # 蓄水潜力
+                        'effective_storage': round(diff_min_real_mm, 2),  # 有效储水量
+                        'available_storage': round(diff_min_real_mm, 2)   # 可用储水量
+                    }
+                    
+                    logger.info(f"返回给前端的墒情数据: sat={response_data['sat']}%, fc={response_data['fc']}%, pwp={response_data['pwp']}%")
+                    
+                    logger.info(f"成功返回使用irrigation_service计算的土壤墒情数据")
+                    return jsonify(response_data)
+                except Exception as e:
+                    logger.error(f"使用irrigation_service计算土壤墒情参数时出错: {str(e)}")
+                    current_humidity_mm = sensor_data.get('real_humidity', 0) * SOIL_DEPTH_CM / 10
+                    wilting_point = sensor_data.get('pwp', 0) * SOIL_DEPTH_CM / 10
+                    
+                    response_data = {
+                        'max_humidity': sensor_data.get('max_humidity', 0),
+                        'min_humidity': sensor_data.get('min_humidity', 0),
+                        'real_humidity': sensor_data.get('real_humidity', 0),
+                        'sat': sensor_data.get('sat', 0),
+                        'fc': sensor_data.get('fc', 0),
+                        'pwp': sensor_data.get('pwp', 0),
+                        'is_real_data': is_real_data,
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'unit': '%',
+                        'storage_potential': (sensor_data.get('sat', 0) - sensor_data.get('real_humidity', 0)) * SOIL_DEPTH_CM / 10,
+                        'effective_storage': max(0, sensor_data.get('real_humidity', 0) - sensor_data.get('fc', 0)) * SOIL_DEPTH_CM / 10,
+                        'available_storage': max(0, current_humidity_mm - wilting_point)
+                    }
+                    
+                    logger.warning(f"由于计算错误,返回原始sensor_data基础数据: {str(e)}")
+                    logger.warning("数据完整性警告: 返回的土壤墒情参数未经过irrigation_service计算验证")
+                    return jsonify(response_data)
             except Exception as e:
                 logger.error(f"获取土壤数据时出错: {str(e)}")
                 return create_error_response('获取土壤数据失败', 500)
@@ -526,36 +658,303 @@ def create_routes(config):
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }), 500
         
+        # ET历史数据API接口
+        @api.route('/api/et_history')
+        @api_error_handler
+        def et_history():
+            """获取ETref和ETc历史数据（整个生育期）"""
+            try:
+                # 支持通过请求参数指定田块（虽然ET数据可能对所有田块相同，因为使用同一个模型文件）
+                request_field_id = request.args.get("field_id", field_id)
+                logger.info(f"API请求ET历史数据: field_id={request_field_id}")
+                
+                # 获取模型输出文件路径
+                model_output_file = config.FILE_PATHS.get('model_output', os.path.join('data', 'model_output', 'wheat2024.out'))
+                model_output_path = os.path.join(project_root, model_output_file)
+                
+                if not os.path.exists(model_output_path):
+                    logger.error(f"模型输出文件不存在: {model_output_path}")
+                    return create_error_response('模型输出文件不存在', 404)
+                
+                # 读取模型输出文件
+                try:
+                    df = pd.read_csv(model_output_path, delim_whitespace=True, skiprows=10)
+                except Exception as e:
+                    logger.error(f"读取模型输出文件失败: {str(e)}")
+                    return create_error_response(f'读取模型输出文件失败: {str(e)}', 500)
+                
+                if df.empty:
+                    return create_error_response('模型输出文件为空', 404)
+                
+                # 验证必要的列
+                required_columns = ['Date', 'ETc']
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                if missing_columns:
+                    return create_error_response(f'模型输出文件缺少必要列: {missing_columns}', 400)
+                
+                # 解析日期
+                df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y', errors='coerce')
+                df = df.dropna(subset=['Date'])
+                
+                if df.empty:
+                    return create_error_response('模型输出文件中没有有效的日期数据', 404)
+                
+                # 获取ETref列（如果存在），否则尝试从ET0列获取
+                if 'ETref' in df.columns:
+                    etref_col = 'ETref'
+                elif 'ET0' in df.columns:
+                    etref_col = 'ET0'
+                else:
+                    # 如果没有ETref列，尝试从天气数据计算或使用默认值
+                    logger.warning("模型输出文件中没有ETref或ET0列，将使用ETc作为参考")
+                    etref_col = None
+                
+                # 获取整个生育期的数据（不限制天数）
+                # 筛选有效数据（去除NaN）
+                filtered_df = df.copy()
+                filtered_df = filtered_df.sort_values('Date')
+                
+                if filtered_df.empty:
+                    return jsonify({
+                        'status': 'warning',
+                        'message': '没有ET数据',
+                        'data': {
+                            'dates': [],
+                            'etref': [],
+                            'etc': []
+                        },
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }), 200
+                
+                # 提取数据并处理NaN值
+                dates = filtered_df['Date'].dt.strftime('%Y-%m-%d').tolist()
+                
+                # 处理ETc数据：将NaN替换为0
+                etc_data = filtered_df['ETc'].fillna(0).replace([np.inf, -np.inf], 0).tolist()
+                
+                # ETref数据
+                if etref_col:
+                    etref_data = filtered_df[etref_col].fillna(0).replace([np.inf, -np.inf], 0).tolist()
+                else:
+                    # 如果没有ETref，使用ETc的1.2倍作为估算（这是一个粗略的估算）
+                    etref_data = (filtered_df['ETc'].fillna(0) * 1.2).replace([np.inf, -np.inf], 0).tolist()
+                    logger.info("使用ETc的1.2倍作为ETref的估算值")
+                
+                # 确保所有数据都是有效的数值（不是NaN、Inf等）
+                etc_data = [float(x) if pd.notna(x) and np.isfinite(x) else 0.0 for x in etc_data]
+                etref_data = [float(x) if pd.notna(x) and np.isfinite(x) else 0.0 for x in etref_data]
+                
+                logger.info(f"成功返回ET历史数据: {len(dates)}天, field_id={request_field_id}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': {
+                        'dates': dates,
+                        'etref': etref_data,
+                        'etc': etc_data
+                    },
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }), 200
+                
+            except Exception as e:
+                logger.error(f"获取ET历史数据时出错: {str(e)}")
+                logger.error(traceback.format_exc())
+                return create_error_response(f'获取ET历史数据失败: {str(e)}', 500)
+        
+        # 作物生长阶段API接口
+        @api.route('/api/growth_stage')
+        @api_error_handler
+        def growth_stage():
+            """获取作物生长阶段数据"""
+            try:
+                # 支持通过请求参数指定田块（虽然生长数据可能对所有田块相同，因为使用同一个模型文件）
+                request_field_id = request.args.get("field_id", field_id)
+                logger.info(f"API请求作物生长阶段数据: field_id={request_field_id}")
+                
+                # 获取模型输出文件路径
+                model_output_file = config.FILE_PATHS.get('model_output', os.path.join('data', 'model_output', 'wheat2024.out'))
+                model_output_path = os.path.join(project_root, model_output_file)
+                
+                # 获取生育阶段文件路径
+                growth_stages_file = config.FILE_PATHS.get('growth_stages', os.path.join('data', 'model_output', 'growth_stages.csv'))
+                growth_stages_path = os.path.join(project_root, growth_stages_file)
+                
+                # 获取当前生育阶段
+                current_stage = None
+                current_stage_name = '未知'
+                try:
+                    if os.path.exists(growth_stages_path):
+                        growth_stages_df = pd.read_csv(growth_stages_path)
+                        if not growth_stages_df.empty and '开始日期' in growth_stages_df.columns:
+                            growth_stages_df['开始日期'] = pd.to_datetime(growth_stages_df['开始日期'], errors='coerce')
+                            growth_stages_df['结束日期'] = pd.to_datetime(growth_stages_df['结束日期'], errors='coerce')
+                            growth_stages_df = growth_stages_df.dropna(subset=['开始日期', '结束日期'])
+                            
+                            now = datetime.now().date()
+                            for _, stage in growth_stages_df.iterrows():
+                                start_date = stage['开始日期'].date()
+                                end_date = stage['结束日期'].date()
+                                if start_date <= now <= end_date:
+                                    current_stage_name = stage.get('阶段', '未知')
+                                    current_stage = stage.to_dict()
+                                    break
+                except Exception as e:
+                    logger.warning(f"读取生育阶段文件失败: {str(e)}")
+                
+                # 从模型输出文件获取根系深度和当前数据
+                root_depth = None
+                dap = None
+                canopy_cover = None
+                
+                try:
+                    if os.path.exists(model_output_path):
+                        df = pd.read_csv(model_output_path, delim_whitespace=True, skiprows=10)
+                        if not df.empty and 'Date' in df.columns:
+                            df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y', errors='coerce')
+                            df = df.dropna(subset=['Date'])
+                            
+                            now = pd.to_datetime(datetime.now().date())
+                            today_data = df[df['Date'] == now]
+                            
+                            if today_data.empty:
+                                # 使用最接近的日期
+                                df['date_diff'] = abs((df['Date'] - now).dt.days)
+                                closest_row = df.loc[df['date_diff'].idxmin()]
+                            else:
+                                closest_row = today_data.iloc[0]
+                            
+                            # 获取根系深度
+                            if 'Zr' in closest_row:
+                                root_depth = float(closest_row['Zr']) if pd.notna(closest_row['Zr']) else None
+                            
+                            # 尝试获取DAP（如果有的话）
+                            if 'DAP' in closest_row:
+                                dap = int(closest_row['DAP']) if pd.notna(closest_row['DAP']) else None
+                except Exception as e:
+                    logger.warning(f"读取模型输出文件失败: {str(e)}")
+                
+                # 尝试从AquaCrop输出获取冠层覆盖度
+                try:
+                    aquacrop_output_dir = os.path.join(project_root, config.AQUACROP_CONFIG.get('OUTPUT_DIR', 'data/model_output'))
+                    daily_crop_growth_file = os.path.join(aquacrop_output_dir, 'daily_crop_growth.csv')
+                    
+                    if os.path.exists(daily_crop_growth_file):
+                        crop_df = pd.read_csv(daily_crop_growth_file)
+                        if not crop_df.empty and 'Date' in crop_df.columns:
+                            crop_df['Date'] = pd.to_datetime(crop_df['Date'], errors='coerce')
+                            crop_df = crop_df.dropna(subset=['Date'])
+                            
+                            now = pd.to_datetime(datetime.now().date())
+                            today_crop_data = crop_df[crop_df['Date'] == now]
+                            
+                            if today_crop_data.empty:
+                                crop_df['date_diff'] = abs((crop_df['Date'] - now).dt.days)
+                                closest_crop_row = crop_df.loc[crop_df['date_diff'].idxmin()]
+                            else:
+                                closest_crop_row = today_crop_data.iloc[0]
+                            
+                            # 获取冠层覆盖度（可能是 CC 或 _cc）
+                            for col in ['CC', '_cc', 'canopy_cover']:
+                                if col in closest_crop_row:
+                                    cc_value = closest_crop_row[col]
+                                    if pd.notna(cc_value):
+                                        canopy_cover = float(cc_value)
+                                        break
+                            
+                            # 获取DAP（可能是 DAP 或 _dap）
+                            if dap is None:
+                                for col in ['DAP', '_dap', 'dap']:
+                                    if col in closest_crop_row:
+                                        dap_value = closest_crop_row[col]
+                                        if pd.notna(dap_value):
+                                            dap = int(dap_value)
+                                            break
+                except Exception as e:
+                    logger.warning(f"读取AquaCrop输出文件失败: {str(e)}")
+                
+                # 构建响应数据
+                growth_data = {
+                    'stage': current_stage_name,
+                    'dap': dap,
+                    'root_depth': root_depth,
+                    'canopy_cover': canopy_cover,
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                
+                logger.info(f"返回作物生长阶段数据: stage={current_stage_name}, root_depth={root_depth}m, dap={dap}, canopy_cover={canopy_cover}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': growth_data
+                }), 200
+                
+            except Exception as e:
+                logger.error(f"获取作物生长阶段数据时出错: {str(e)}")
+                logger.error(traceback.format_exc())
+                return create_error_response(f'获取作物生长阶段数据失败: {str(e)}', 500)
+        
         # 灌溉推荐API接口
         @api.route('/api/irrigation_recommendation')
         @api_error_handler
         def irrigation_recommendation():
             """获取灌溉推荐数据"""
             try:
+                # 从请求参数获取田块ID
+                request_field_id = request.args.get("field_id", field_id)
+                request_device_id, field_name = get_device_id_by_field(request_field_id)
+                logger.info(f"API请求灌溉决策: field_id={request_field_id}, device_id={request_device_id}, field_name={field_name}")
+                
                 # 尝试获取真实灌溉决策数据
-                soil_sensor = SoilSensor(device_id, field_id)
-                logger.info(f"API请求灌溉决策: field_id={field_id}")
+                soil_sensor = SoilSensor(request_device_id, request_field_id)
                 sensor_data = soil_sensor.get_current_data()
                 
-                if not sensor_data.get('is_real_data', False):
-                    logger.warning("获取灌溉推荐数据: 无法获取真实土壤数据")
+                # 检查是否有可用的数据
+                max_humidity = sensor_data.get('max_humidity', 0) or 0
+                min_humidity = sensor_data.get('min_humidity', 0) or 0
+                real_humidity = sensor_data.get('real_humidity', 0)
+                # 确保 real_humidity 不为 None
+                if real_humidity is None:
+                    real_humidity = 0
+                real_humidity = float(real_humidity) if real_humidity else 0.0
+                is_real_data = sensor_data.get('is_real_data', False)
+                
+                # 检查是否有可用的数据（至少SAT、FC、PWP中有一个不是默认值）
+                has_valid_data = (sensor_data.get('sat', 0) > 0 or 
+                                 sensor_data.get('fc', 0) > 0 or 
+                                 sensor_data.get('pwp', 0) > 0 or
+                                 max_humidity > 0 or min_humidity > 0)
+                
+                if not has_valid_data:
+                    logger.warning("获取灌溉推荐数据: 所有土壤参数都不可用")
                     return jsonify({
                         'status': 'error', 
-                        'message': '无法获取真实土壤数据进行决策',
+                        'message': '无法获取有效的土壤数据进行决策',
                         'data': {
                             'irrigation_amount': 0,
-                            'message': '无法获取真实土壤数据，无法提供灌溉决策',
+                            'message': '无法获取有效的土壤数据，无法提供灌溉决策',
                             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         }
                     }), 503
                 
+                # 验证 real_humidity 参数
+                if real_humidity is None or not isinstance(real_humidity, (int, float)):
+                    logger.error(f"[田块 {request_field_id}] 无效的土壤湿度数据: {real_humidity}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'无效的土壤湿度数据: {real_humidity}',
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }), 400
+                
+                # 即使is_real_data为False，只要有可用数据就尝试生成决策
+                if not is_real_data:
+                    logger.warning(f"获取灌溉推荐数据: 部分数据可能不完整 (is_real_data=False)，但将尝试生成决策")
+                
                 try:
-                    # 生成真实的灌溉决策
+                    # 生成灌溉决策（SAT/FC/PWP 自动从传感器获取）
                     result = irrigation_service.make_irrigation_decision(
-                        field_id,
-                        sensor_data['max_humidity'],
-                        sensor_data['min_humidity'],
-                        sensor_data['real_humidity']
+                        request_field_id,
+                        request_device_id,
+                        real_humidity
                     )
                     
                     if result and isinstance(result, dict):
@@ -566,10 +965,11 @@ def create_routes(config):
                             'calculated_deficit': result.get('soil_data', {}).get('available_storage', 0),
                             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                             'soil_moisture_status': 'sufficient' if result.get('irrigation_value', 0) == 0 else 'insufficient',
-                            'next_check_time': (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+                            'next_check_time': (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'),
+                            'data_quality': 'real' if is_real_data else 'partial'
                         }
                         
-                        logger.info(f"返回真实灌溉推荐数据: 灌溉量={recommendation['irrigation_amount']}mm")
+                        logger.info(f"返回灌溉推荐数据: 灌溉量={recommendation['irrigation_amount']}mm, 数据质量={recommendation['data_quality']}")
                         return jsonify({'status': 'success', 'data': recommendation})
                     else:
                         logger.warning("灌溉服务返回了无效的结果")
@@ -577,118 +977,22 @@ def create_routes(config):
                     logger.error(f"生成灌溉决策时出错: {str(e)}")
                     logger.error(traceback.format_exc())
                 
-                # 如果无法获取真实数据或生成失败，返回默认数据
-                logger.warning("无法获取真实灌溉决策，返回模拟数据")
+                # 如果无法生成决策，返回默认数据
+                logger.warning("无法生成灌溉决策，返回默认数据")
                 mock_recommendation = {
                     'irrigation_amount': 0,  # 单位：mm
                     'message': '当前土壤水分充足，无需灌溉',
                     'calculated_deficit': 0,
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'soil_moisture_status': 'sufficient',
-                    'next_check_time': (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+                    'next_check_time': (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'),
+                    'data_quality': 'default'
                 }
                 
                 return jsonify({'status': 'success', 'data': mock_recommendation})
             except Exception as e:
                 logger.error(f"获取灌溉推荐数据时出错: {str(e)}")
                 return create_error_response('获取灌溉推荐数据失败', 500)
-        
-        # ETref和ETc历史数据API接口
-        @api.route('/api/et_history')
-        @api_error_handler
-        def et_history():
-            """获取ETref和ETc历史数据"""
-            try:
-                days = request.args.get('days', default=DEFAULT_DAYS, type=int)
-                if days <= 0 or days > MAX_DAYS_RANGE:
-                    return create_error_response(
-                        f'无效的天数参数: {days},天数应在1-{MAX_DAYS_RANGE}之间',
-                        400,
-                        {'valid_range': f'1-{MAX_DAYS_RANGE}'}
-                    )
-                
-                # 读取wheat2024.out文件
-                wheat_output_file = os.path.join(project_root, 'data/model_output/wheat2024.out')
-                
-                if not os.path.exists(wheat_output_file):
-                    logger.error(f"wheat2024.out文件不存在: {wheat_output_file}")
-                    return create_error_response('ETref和ETc数据文件不存在', 404)
-                with open(wheat_output_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                data_start_line = None
-                for i, line in enumerate(lines):
-                    if 'Year-DOY' in line and 'ETref' in line and 'ETc' in line:
-                        data_start_line = i + 1  # 数据从下一行开始
-                        break
-                
-                if data_start_line is None:
-                    logger.error("无法在wheat2024.out文件中找到数据开始行")
-                    return create_error_response('无法解析ETref和ETc数据文件格式', 500)
-                dates = []
-                etref_values = []
-                etc_values = []
-                data_lines = lines[data_start_line:]
-                
-                for line_number, line in enumerate(data_lines, start=data_start_line + 1):
-                    if line.strip():
-                        parts = line.strip().split()
-                        if len(parts) >= ET_DATA_MIN_COLUMNS:  # 确保有足够的列（ETc在第20列）
-                            try:
-                                date_str = parts[4]
-                                date_obj = datetime.strptime(date_str, '%m/%d/%y')
-                                etref = float(parts[5])
-                                etc = float(parts[19])  
-                                
-                                dates.append(date_obj.strftime('%Y-%m-%d'))
-                                etref_values.append(etref)
-                                etc_values.append(etc)
-                                
-                            except (ValueError, IndexError) as e:
-                                logger.warning(f"跳过无效数据行 (行号: {line_number}): {line.strip()[:50]}... 错误: {e}")
-                                continue
-                
-                if not dates:
-                    logger.warning("未能从wheat2024.out文件中解析出有效数据")
-                    return create_error_response('未找到有效的ETref和ETc数据', 404)
-                
-                result = {
-                    'dates': dates,
-                    'etref': etref_values,
-                    'etc': etc_values,
-                    'count': len(dates)
-                }
-                
-                logger.info(f"成功返回ETref和ETc历史数据: {len(dates)}天")
-                return jsonify({'status': 'success', 'data': result})
-                
-            except Exception as e:
-                logger.error(f"获取ETref和ETc历史数据时出错: {str(e)}")
-                logger.error(traceback.format_exc())
-                return create_error_response('获取ETref和ETc历史数据失败', 500)
-        
-        # 作物生长阶段API接口
-        @api.route('/api/growth_stage')
-        @api_error_handler
-        def growth_stage():
-            """获取作物生长阶段数据"""
-            try:
-                mock_growth_data = {
-                    'stage': '营养生长期',
-                    'dap': 45,  
-                    'root_depth': 0.25, 
-                    'canopy_cover': 0.68,  
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'plant_height': 0.6, 
-                    'current_stage_days': 15,
-                    'next_stage': '抽穗期',
-                    'days_to_next_stage': 12
-                }
-                
-                logger.info("返回作物生长阶段数据")
-                return jsonify({'status': 'success', 'data': mock_growth_data})
-            except Exception as e:
-                logger.error(f"获取作物生长阶段数据时出错: {str(e)}")
-                return create_error_response('获取作物生长阶段数据失败', 500)
         
         # API文档接口
         @api.route('/api/docs')

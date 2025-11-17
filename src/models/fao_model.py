@@ -127,6 +127,12 @@ class FAOModel:
 
             drought_weather_data = pd.read_csv(drought_weather)
             logger.info(f"原始天气数据日期范围: {drought_weather_data['Date'].min()} 到 {drought_weather_data['Date'].max()}")
+            logger.info(f"原始天气数据行数: {len(drought_weather_data)}")
+            
+            # 清理天气数据中的NaN值
+            from src.models.weather import clean_weather_data
+            drought_weather_data = clean_weather_data(drought_weather_data)
+            logger.info(f"清理后天气数据行数: {len(drought_weather_data)}")
             
             if start_date not in drought_weather_data['Date'].values:
                 logger.error(f"开始日期 {start_date} 不在天气数据中")

@@ -1191,10 +1191,29 @@ def run_model_and_save_results() -> Dict:
             raw_sat = soil_params.get('sat', config['SOIL_SATURATION'])
             raw_fc = soil_params.get('fc', config['SOIL_FIELD_CAPACITY'])
             raw_pwp = soil_params.get('pwp', config['SOIL_WILTING_POINT'])
+            
             def convert_to_decimal(value):
-                if value > 1:
-                    return value / 100.0
-                return value
+                """将百分比值转换为小数（如果值大于1则除以100）
+                
+                Args:
+                    value: 可能是百分比值或小数，也可能是 None
+                    
+                Returns:
+                    float: 转换后的小数值
+                """
+                if value is None:
+                    logger.warning("接收到 None 值，使用默认值 0.25")
+                    return 0.25  # 默认田间持水量
+                
+                try:
+                    value = float(value)
+                    if value > 1:
+                        return value / 100.0
+                    return value
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"无法转换值 {value} 为数值，使用默认值 0.25: {e}")
+                    return 0.25
+            
             thS = convert_to_decimal(raw_sat)
             thFC = convert_to_decimal(raw_fc)
             thWP = convert_to_decimal(raw_pwp)      
